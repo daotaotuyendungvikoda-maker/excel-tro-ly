@@ -1,4 +1,4 @@
-var WORKER = "https://excel-tro-ly.TEN-TAI-KHOAN.workers.dev"; // <-- SỬA
+var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; // <-- SỬA
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
 var state = { code: "", task: "formula", lastQ: "", undo: [] };
