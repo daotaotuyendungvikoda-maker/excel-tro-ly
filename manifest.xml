@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+  <Id>7b1d3f2e-4c5a-4e8b-9a6f-1c2d3e4f5a6b</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Vikoda</ProviderName>
+  <DefaultLocale>vi-VN</DefaultLocale>
+  <DisplayName DefaultValue="Trợ lý Excel"/>
+  <Description DefaultValue="Kiểm tra lỗi, viết và tối ưu công thức cho Excel"/>
+  <IconUrl DefaultValue="https://daotaotuyendungvikoda-maker.github.io/excel-tro-ly/icon.png"/>
+  <HighResolutionIconUrl DefaultValue="https://daotaotuyendungvikoda-maker.github.io/excel-tro-ly/icon.png"/>
+  <SupportUrl DefaultValue="https://daotaotuyendungvikoda-maker.github.io/excel-tro-ly/taskpane.html"/>
+  <AppDomains>
+    <AppDomain>https://excel-tro-ly.daotaotuyendungvikoda.workers.dev</AppDomain>
+  </AppDomains>
+  <Hosts><Host Name="Workbook"/></Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://daotaotuyendungvikoda-maker.github.io/excel-tro-ly/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="TroLy.Group">
+                <Label resid="Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon"/>
+                  <bt:Image size="32" resid="Icon"/>
+                  <bt:Image size="80" resid="Icon"/>
+                </Icon>
+                <Control xsi:type="Button" id="TroLy.Button">
+                  <Label resid="Button.Label"/>
+                  <Supertip>
+                    <Title resid="Button.Label"/>
+                    <Description resid="Button.Tip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon"/>
+                    <bt:Image size="32" resid="Icon"/>
+                    <bt:Image size="80" resid="Icon"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>TroLyPane</TaskpaneId>
+                    <SourceLocation resid="Pane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon" DefaultValue="https://daotaotuyendungvikoda-maker.github.io/excel-tro-ly/icon.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Pane.Url" DefaultValue="https://daotaotuyendungvikoda-maker.github.io/excel-tro-ly/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Group.Label" DefaultValue="Trợ lý"/>
+        <bt:String id="Button.Label" DefaultValue="Trợ lý Excel"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="Button.Tip" DefaultValue="Mở trợ lý kiểm tra lỗi và viết công thức"/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
