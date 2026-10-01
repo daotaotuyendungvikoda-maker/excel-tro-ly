@@ -1,4 +1,4 @@
-var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; // <-- SỬA
+var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* <-- SỬA */
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
 var state = { code: "", task: "formula", lastQ: "", undo: [] };
@@ -18,7 +18,7 @@ function compat() {
   catch (e) { return "legacy"; }
 }
 
-// ---------- Gọi Worker ----------
+/* ---------- Gọi Worker ---------- */
 function api(path, method, body, cb) {
   var x = new XMLHttpRequest();
   x.open(method, WORKER + path);
@@ -33,7 +33,7 @@ function api(path, method, body, cb) {
   x.send(body ? JSON.stringify(body) : null);
 }
 
-// ---------- Giao diện ----------
+/* ---------- Giao diện ---------- */
 function busy(b) { $("sendBtn").disabled = b; $("scanBtn").disabled = b; }
 function addMsg(cls, text) {
   var d = document.createElement("div");
@@ -43,7 +43,7 @@ function addMsg(cls, text) {
   return d;
 }
 function setBar(el, pct, invert) {
-  // pct: phần trăm đã dùng (invert=false) hoặc phần trăm còn lại (invert=true)
+  /* pct: phần trăm đã dùng (invert=false) hoặc phần trăm còn lại (invert=true) */
   el.style.width = Math.max(0, Math.min(100, pct)) + "%";
   var bad = invert ? pct <= 10 : pct >= 90;
   var warn = invert ? pct <= 30 : pct >= 70;
@@ -70,7 +70,7 @@ function refreshMe() {
   });
 }
 
-// ---------- Đọc ngữ cảnh bảng tính (có che dữ liệu nhạy cảm) ----------
+/* ---------- Đọc ngữ cảnh bảng tính (có che dữ liệu nhạy cảm) ---------- */
 function getContext(cb) {
   Excel.run(function (ctx) {
     var sel = ctx.workbook.getSelectedRange(); sel.load("address,rowCount,columnCount");
@@ -102,7 +102,7 @@ function getContext(cb) {
   }).then(function (r) { cb(null, r); }, function (e) { cb(String(e && e.message || e), null); });
 }
 
-// ---------- Gửi yêu cầu ----------
+/* ---------- Gửi yêu cầu ---------- */
 function parseReply(t) {
   var s = String(t || "").replace(/```json|```/g, "");
   var a = s.indexOf("{"), b = s.lastIndexOf("}");
@@ -148,7 +148,7 @@ function send(deep) {
   });
 }
 
-// ---------- Áp công thức + Hoàn tác ----------
+/* ---------- Áp công thức + Hoàn tác ---------- */
 function localAddr(a) { var i = a.lastIndexOf("!"); return i >= 0 ? a.substring(i + 1) : a; }
 function applyFormula(formula, msgEl) {
   Excel.run(function (ctx) {
@@ -197,7 +197,7 @@ function undo() {
   }, function (e) { addMsg("bot", "Không hoàn tác được: " + String(e && e.message || e)); });
 }
 
-// ---------- Quét lỗi bằng code (miễn phí) ----------
+/* ---------- Quét lỗi bằng code (miễn phí) ---------- */
 function scan() {
   busy(true);
   $("scanOut").textContent = "Đang quét...";
@@ -251,7 +251,7 @@ function scan() {
   }, function (e) { $("scanOut").textContent = "Không quét được: " + String(e && e.message || e); busy(false); });
 }
 
-// ---------- Khởi động ----------
+/* ---------- Khởi động ---------- */
 Office.onReady(function () {
   state.code = store("code") || "";
   $("loginBtn").onclick = function () {
