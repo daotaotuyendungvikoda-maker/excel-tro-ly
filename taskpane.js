@@ -1,9 +1,9 @@
 var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* đã điền sẵn */
-var APP_VERSION = "1.2.0"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
+var APP_VERSION = "1.3.0"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
 var SERVER_VERSION = "";
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
-var state = { code: "", lastQ: "", undo: [] };
+var state = { code: "", lastQ: "", undo: [], hist: [] };
 
 function $(id) { return document.getElementById(id); }
 function store(k, v) {
@@ -92,7 +92,7 @@ function shortVal(v) {
 function getContext(cb) {
   Excel.run(function (ctx) {
     var wb = ctx.workbook;
-    var sel = wb.getSelectedRange(); sel.load("address");
+    var sel = wb.getSelectedRange(); sel.load("address,rowCount,columnCount,columnIndex,rowIndex");
     var sh = wb.worksheets.getActiveWorksheet(); sh.load("name");
     var sheets = wb.worksheets; sheets.load("items/name");
     var used = sh.getUsedRangeOrNullObject(); used.load("address,rowCount,columnCount,rowIndex,columnIndex");
@@ -116,13 +116,13 @@ function getContext(cb) {
       return ctx.sync().then(function () {
         var r0 = used.rowIndex, c0 = used.columnIndex;
         var v = rg.values, f = rg.formulas, nfm = rg.numberFormat;
-        var out = [];
+        var out = [], maskedAbs = {};
         out.push("Vùng dữ liệu: " + localAddr(used.address) + " (" + used.rowCount + " dòng x " + used.columnCount + " cột). Tiêu đề ở dòng " + (r0 + 1) + ", dữ liệu từ dòng " + (r0 + 2) + " đến dòng " + (r0 + used.rowCount) + "." + (statRows < used.rowCount ? " (thống kê chỉ trên " + statRows + " dòng đầu)" : ""));
         var c, r;
         for (c = 0; c < cols; c++) {
           var h = String(v[0][c]), L = colLetter(c0 + c);
-          if (DANGER_HEADER.test(h)) { out.push(L + " (" + h + "): <ẨN> cột nhạy cảm"); continue; }
-          var nonEmpty = 0, num = 0, txt = 0, err = 0, tn = 0, fcount = 0, date = 0, samples = [], fsample = "", dist = {}, nd = 0, tooMany = false;
+          if (DANGER_HEADER.test(h)) { maskedAbs[c0 + c] = true; out.push(L + " (" + h + "): <ẨN> cột nhạy cảm"); continue; }
+          var nonEmpty = 0, num = 0, txt = 0, err = 0, tn = 0, fcount = 0, date = 0, samples = [], fsample = "", dist = {}, nd = 0, tooMany = false, txtCells = [], errCells = [];
           for (r = 1; r < v.length; r++) {
             var x = v[r][c];
             if (x === "" || x === null) continue;
@@ -130,18 +130,50 @@ function getContext(cb) {
             if (typeof f[r][c] === "string" && f[r][c].charAt(0) === "=") { fcount++; if (!fsample) fsample = "dòng " + (r0 + r + 1) + ": " + f[r][c]; }
             if (typeof x === "number") { num++; if (isDateFmt(nfm[r][c])) date++; }
             else if (typeof x === "string") {
-              if (ERR_RE.test(x)) err++; else { txt++; if (isTextNum(x)) tn++; }
+              var xa = L + (r0 + r + 1);
+              if (ERR_RE.test(x)) { err++; if (errCells.length < 8) errCells.push(xa); } else { txt++; if (isTextNum(x)) tn++; if (txtCells.length < 8) txtCells.push(xa + "='" + shortVal(x) + "'"); }
               if (!tooMany && !/^\d{9,16}$/.test(x)) { if (!(x in dist)) { dist[x] = 1; nd++; if (nd > 12) tooMany = true; } }
             }
             if (samples.length < 4) samples.push(shortVal(x));
           }
+          var oddF = [];
+          if (fcount >= 3 && fcount / nonEmpty >= 0.6) {
+            var cnt = {}, norm = [], rr, best = "", bestN = 0, k2;
+            for (rr = 1; rr < v.length; rr++) {
+              var fx = f[rr][c], nz = null;
+              if (typeof fx === "string" && fx.charAt(0) === "=") { nz = fx.replace(new RegExp("([A-Z]+)" + (r0 + rr + 1) + "(?!\\d)", "g"), "$1#"); cnt[nz] = (cnt[nz] || 0) + 1; }
+              norm.push(nz);
+            }
+            for (k2 in cnt) if (cnt[k2] > bestN) { best = k2; bestN = cnt[k2]; }
+            for (rr = 1; rr < v.length && oddF.length < 6; rr++) {
+              var fy = f[rr][c];
+              if (fy === "" || fy === null) continue;
+              if (norm[rr - 1] === null) oddF.push(L + (r0 + rr + 1) + " (số gõ tay " + shortVal(fy) + ")");
+              else if (norm[rr - 1] !== best) oddF.push(L + (r0 + rr + 1) + " (" + fy + ")");
+            }
+          }
           var kind = num && !txt ? (date > num / 2 ? "ngày" : "số") : (txt && !num ? "chữ" : (nonEmpty ? "lẫn số và chữ" : "trống"));
           var line = L + " (" + h + "): " + kind + ", " + nonEmpty + " ô có dữ liệu; mẫu: " + samples.join(" | ");
           if (tn) line += "; " + tn + " ô là số lưu dạng chữ";
-          if (err) line += "; " + err + " ô báo lỗi";
+          if (err) line += "; " + err + " ô báo lỗi (" + errCells.join(", ") + ")";
+          if (num > txt && txt > 0) line += "; Ô CHỮ LẪN TRONG CỘT SỐ: " + txtCells.join(", ");
+          if (oddF.length) line += "; Ô LỆCH CÔNG THỨC SO VỚI CỘT: " + oddF.join(", ");
           if (fcount) line += "; có " + fcount + " công thức (" + fsample + ")";
           if (txt && !tooMany && nd > 0 && nd <= 12) line += "; giá trị khác nhau: " + Object.keys(dist).map(shortVal).join(", ");
           out.push(line);
+        }
+        function withSel(t) {
+          var n = sel.rowCount * sel.columnCount;
+          if (n > 60) return { text: t + "\nChị đang chọn vùng lớn " + localAddr(sel.address) + "." };
+          sel.load("formulas");
+          return ctx.sync().then(function () {
+            var fs = sel.formulas, ln = [], a1, b1;
+            for (a1 = 0; a1 < fs.length; a1++) for (b1 = 0; b1 < fs[a1].length; b1++) {
+              var cv = maskedAbs[sel.columnIndex + b1] && sel.rowIndex !== r0 ? "<ẨN>" : shortVal(fs[a1][b1]);
+              ln.push(colLetter(sel.columnIndex + b1) + (sel.rowIndex + a1 + 1) + "=" + cv);
+            }
+            return { text: t + "\nNội dung vùng chị đang chọn (" + localAddr(sel.address) + "): " + ln.join(" | ") };
+          });
         }
         var text = head + out.join("\n");
         if (others.length) {
@@ -158,10 +190,10 @@ function getContext(cb) {
               for (var m = 0; m < hv.length; m++) if (hv[m] !== "" && !DANGER_HEADER.test(String(hv[m]))) hh.push(colLetter(hdrs[k].used.columnIndex + m) + "=" + hv[m]);
               extra += "\nSheet '" + hdrs[k].name + "' (" + localAddr(hdrs[k].used.address) + "), tiêu đề: " + hh.join(", ");
             }
-            return { text: text + extra };
+            return withSel(text + extra);
           });
         }
-        return { text: text };
+        return withSel(text);
       });
     });
   }).then(function (r) { cb(null, r); }, function (e) { cb(String(e && e.message || e), null); });
@@ -180,7 +212,7 @@ function parseReply(t) {
   }
   return { message: String(t || ""), actions: [], warnings: null };
 }
-var OPS = { set_formula: 1, set_values: 1, format: 1, col_width: 1, freeze: 1, filter: 1, text_to_number: 1, trim_text: 1, add_sheet: 1, chart: 1 };
+var OPS = { sort: 1, highlight: 1, dropdown: 1, set_formula: 1, set_values: 1, format: 1, col_width: 1, freeze: 1, filter: 1, text_to_number: 1, trim_text: 1, add_sheet: 1, chart: 1 };
 function describe(a) {
   var r = a.range ? " " + a.range : "";
   var sh = a.sheet ? " (sheet " + a.sheet + ")" : "";
@@ -198,6 +230,9 @@ function describe(a) {
     case "filter": return "Bật bộ lọc" + r + sh;
     case "text_to_number": return "Đổi số lưu dạng chữ thành số" + r + sh;
     case "trim_text": return "Xóa khoảng trắng thừa" + r + sh;
+    case "sort": return "Sắp xếp" + r + sh + " theo cột " + (a.by || "?") + (String(a.order).toLowerCase() === "desc" ? " (giảm dần)" : " (tăng dần)");
+    case "highlight": return "Tô màu" + r + sh + " khi " + ({ duplicates: "trùng nhau", greater_than: "lớn hơn " + a.value, less_than: "nhỏ hơn " + a.value, equals: "bằng " + a.value, contains: "chứa " + a.value, formula: "thỏa điều kiện" }[String(a.rule)] || "thỏa điều kiện");
+    case "dropdown": return "Tạo ô chọn sẵn" + r + sh + ": " + (a.items || []).slice(0, 6).join(", ");
     case "add_sheet": return "Thêm sheet " + a.name;
     case "chart": return "Vẽ biểu đồ " + (a.title || "") + " từ " + (a.range || "") + sh;
   }
@@ -228,10 +263,10 @@ function boundedRange(ctx, sheet, r) {
 
 /* chụp trạng thái cũ để hoàn tác */
 function snapRange(ctx, rng, wantFmt) {
-  rng.load("address,rowCount,columnCount,formulas,numberFormat");
+  rng.load("address,rowCount,columnCount,columnIndex,formulas,numberFormat");
   rng.worksheet.load("name");
   return ctx.sync().then(function () {
-    var s = { sheet: rng.worksheet.name, addr: localAddr(rng.address), formulas: rng.formulas, nf: rng.numberFormat, props: null, rows: rng.rowCount, cols: rng.columnCount, fmtSkipped: false };
+    var s = { c0: rng.columnIndex, sheet: rng.worksheet.name, addr: localAddr(rng.address), formulas: rng.formulas, nf: rng.numberFormat, props: null, rows: rng.rowCount, cols: rng.columnCount, fmtSkipped: false };
     var n = rng.rowCount * rng.columnCount;
     if (!wantFmt) return s;
     if (n > 1500) { s.fmtSkipped = true; return s; }
@@ -268,6 +303,10 @@ function restoreCells(ctx, s) {
 var BORDER_IDS = ["EdgeTop", "EdgeBottom", "EdgeLeft", "EdgeRight", "InsideHorizontal", "InsideVertical"];
 function borderIds(rows, cols) {
   return BORDER_IDS.filter(function (id) { return !(id === "InsideHorizontal" && rows < 2) && !(id === "InsideVertical" && cols < 2); });
+}
+function numFromText(s) {
+  var m = /^\s*(-?\d[\d.,]*)\s*(ngày|ngay|công|đồng|vnđ|vnd|đ|₫)?\s*$/i.exec(String(s));
+  return m ? parseNumberText(m[1]) : null;
 }
 function parseNumberText(s) {
   var t = String(s).replace(/[\s ]/g, "");
@@ -365,6 +404,62 @@ function doAction(ctx, a, base, undo) {
   return boundedRange(ctx, sheet, r).then(function (rng) {
     if (!rng) throw new Error("không có dữ liệu trong vùng này");
 
+    if (op === "sort") {
+      var by = String(a.by || "").replace(/[^A-Za-z]/g, "").toUpperCase();
+      if (!by) throw new Error("thiếu cột để sắp xếp");
+      var ci = 0, q2;
+      for (q2 = 0; q2 < by.length; q2++) ci = ci * 26 + by.charCodeAt(q2) - 64;
+      ci -= 1;
+      return snapRange(ctx, rng, true).then(function (s) {
+        var key = ci - s.c0;
+        if (key < 0 || key >= s.cols) throw new Error("cột " + by + " nằm ngoài vùng");
+        undo.push({ t: "cells", snap: s });
+        rng.sort.apply([{ key: key, ascending: String(a.order).toLowerCase() !== "desc" }], false, true, "Rows");
+        return ctx.sync().then(function () { return describe(a) + (s.fmtSkipped ? " (vùng lớn: màu/đậm không hoàn tác được)" : ""); });
+      });
+    }
+
+    if (op === "highlight") {
+      var rule = String(a.rule || "").toLowerCase();
+      var fillC = /^#[0-9A-Fa-f]{6}$/.test(a.fill || "") ? a.fill : "#FFC7CE";
+      var fontC = /^#[0-9A-Fa-f]{6}$/.test(a.color || "") ? a.color : "#9C0006";
+      var v = String(a.value === undefined ? "" : a.value);
+      var cf, fmtObj;
+      if (rule === "duplicates") { cf = rng.conditionalFormats.add("PresetCriteria"); cf.preset.rule = { criterion: "DuplicateValues" }; fmtObj = cf.preset.format; }
+      else if (rule === "greater_than" || rule === "less_than" || rule === "equals") {
+        var f1 = /^-?\d+(\.\d+)?$/.test(v) ? "=" + v : (v.charAt(0) === "=" ? v : '="' + v.replace(/"/g, '""') + '"');
+        cf = rng.conditionalFormats.add("CellValue");
+        cf.cellValue.rule = { formula1: f1, operator: rule === "greater_than" ? "GreaterThan" : (rule === "less_than" ? "LessThan" : "EqualTo") };
+        fmtObj = cf.cellValue.format;
+      } else if (rule === "contains") {
+        cf = rng.conditionalFormats.add("ContainsText");
+        cf.textComparison.rule = { operator: "Contains", text: v };
+        fmtObj = cf.textComparison.format;
+      } else if (rule === "formula") {
+        if (v.charAt(0) !== "=" || FORBID_F.test(v)) throw new Error("công thức điều kiện không hợp lệ");
+        cf = rng.conditionalFormats.add("Custom");
+        cf.custom.rule.formula = v;
+        fmtObj = cf.custom.format;
+      } else throw new Error("kiểu điều kiện chưa hỗ trợ");
+      fmtObj.fill.color = fillC; fmtObj.font.color = fontC;
+      rng.load("address"); rng.worksheet.load("name");
+      return ctx.sync().then(function () {
+        undo.push({ t: "cf", sheet: rng.worksheet.name, addr: localAddr(rng.address) });
+        return describe(a);
+      });
+    }
+
+    if (op === "dropdown") {
+      var items = (a.items || []).slice(0, 30).map(function (x) { return String(x).replace(/,/g, " "); });
+      if (!items.length) throw new Error("thiếu danh sách");
+      rng.dataValidation.rule = { list: { inCellDropDown: true, source: items.join(",") } };
+      rng.load("address"); rng.worksheet.load("name");
+      return ctx.sync().then(function () {
+        undo.push({ t: "validation", sheet: rng.worksheet.name, addr: localAddr(rng.address) });
+        return describe(a);
+      });
+    }
+
     if (op === "filter") {
       sheet.autoFilter.apply(rng);
       return ctx.sync().then(function () { undo.push({ t: "filter", sheet: a.sheet || base }); return describe(a); });
@@ -421,7 +516,7 @@ function doAction(ctx, a, base, undo) {
           var cv = f2[i2][j3], nv = cv;
           if (typeof cv === "string" && cv.charAt(0) !== "=") {
             if (op === "trim_text") nv = cv.replace(/[\s ]+/g, " ").replace(/^\s+|\s+$/g, "");
-            else if (isTextNum(cv)) { var pn = parseNumberText(cv); if (pn !== null) nv = pn; }
+            else { var pn = numFromText(cv); if (pn !== null) nv = pn; }
           }
           if (nv !== cv) changed++;
           rr.push(nv);
@@ -454,7 +549,7 @@ function runActions(actions, done) {
       if (i >= actions.length) { done(log, undo); return; }
       var a = actions[i++];
       Excel.run(function (ctx) { return doAction(ctx, a, base, undo); }).then(
-        function (t) { log.push({ ok: true, t: t }); next(); },
+        function (t) { log.push({ ok: true, warn: /không có ô nào cần sửa/.test(t), t: t }); next(); },
         function (e) { log.push({ ok: false, t: describe(a) + " — không làm được: " + String(e && e.message || e) }); next(); }
       );
     }
@@ -462,18 +557,19 @@ function runActions(actions, done) {
   }, function (e) { log.push({ ok: false, t: "Không đọc được sheet: " + String(e && e.message || e) }); done(log, undo); });
 }
 
-function showResult(msgEl, log, undoBatch) {
+function showResult(msgEl, log, undoBatch, merge) {
   var box = document.createElement("div"); box.className = "small";
   var okN = 0;
   for (var i = 0; i < log.length; i++) {
     var l = document.createElement("div");
-    l.textContent = (log[i].ok ? "✔ " : "✘ ") + log[i].t;
-    if (!log[i].ok) l.style.color = "#c00"; else okN++;
+    l.textContent = (log[i].ok ? (log[i].warn ? "⚠ " : "✔ ") : "✘ ") + log[i].t + (log[i].warn ? " (chưa sửa được gì, bấm Làm kỹ hơn)" : "");
+    if (!log[i].ok) l.style.color = "#c00"; else if (log[i].warn) l.style.color = "#b36b00"; else okN++;
     box.appendChild(l);
   }
   msgEl.appendChild(box);
   if (undoBatch.length) {
-    state.undo.push(undoBatch);
+    if (merge && state.undo.length) state.undo[state.undo.length - 1] = state.undo[state.undo.length - 1].concat(undoBatch);
+    else state.undo.push(undoBatch);
     if (state.undo.length > 10) state.undo.shift();
     $("undoBtn").disabled = false;
     var t = document.createElement("div"); t.className = "small";
@@ -481,16 +577,37 @@ function showResult(msgEl, log, undoBatch) {
     msgEl.appendChild(t);
   }
 }
-function applyActions(actions, msgEl, btn) {
+function applyActions(actions, msgEl, btn, retry) {
   if (btn) btn.disabled = true;
   busy(true);
   runActions(actions, function (log, undoBatch) {
     busy(false);
-    showResult(msgEl, log, undoBatch);
+    showResult(msgEl, log, undoBatch, retry);
+    if (retry) return;
+    var bad = [];
+    for (var i = 0; i < log.length; i++) if (!log[i].ok || /ô ra lỗi/.test(log[i].t)) bad.push(log[i].t);
+    if (bad.length) autoRepair(msgEl, bad);
+  });
+}
+/* tự kiểm tra: nếu vừa làm có ô lỗi hoặc thao tác hỏng thì nhờ AI sửa lại đúng 1 lần */
+function autoRepair(msgEl, bad) {
+  var n = document.createElement("div"); n.className = "small"; n.style.color = "#b36b00";
+  n.textContent = "Tự kiểm tra thấy chỗ chưa ổn, đang nhờ trợ lý sửa lại…";
+  msgEl.appendChild(n);
+  busy(true);
+  getContext(function (err, c) {
+    if (err) { busy(false); return; }
+    var q = "Lần làm trước có chỗ chưa ổn: " + bad.join(" ; ").substring(0, 700) + ". Yêu cầu gốc của chị: " + state.lastQ + ". Hãy sửa lại cho đúng (chỉ làm phần cần sửa).";
+    api("/api/chat", "POST", { question: q, context: c.text, compat: compat(), deep: true, history: state.hist.slice(-3) }, function (e, d) {
+      busy(false);
+      if (e) { addMsg("bot", "Không sửa lại tự động được: " + e); return; }
+      showBot(parseReply(d.reply), d.meta, d.cut, true);
+      updateQuota(d.quota, d.meta);
+    });
   });
 }
 
-function showBot(j, meta, cut) {
+function showBot(j, meta, cut, retry) {
   var d = document.createElement("div");
   d.className = "msg bot";
   var p = document.createElement("div");
@@ -509,8 +626,13 @@ function showBot(j, meta, cut) {
   m.textContent = meta.label + " · " + fmt(meta.tokens_in) + " token vào / " + fmt(meta.tokens_out) + " ra · ~" + fmt(meta.cost_vnd) + "đ · vì: " + meta.reason;
   d.appendChild(m);
   $("log").insertBefore(d, $("log").firstChild);
+  if (!retry) {
+    var summary = (j.message || "") + (acts.length ? " | " + acts.slice(0, 6).map(describe).join("; ") : "");
+    state.hist.push({ q: state.lastQ, a: summary.substring(0, 500) });
+    if (state.hist.length > 4) state.hist.shift();
+  }
   if (acts.length) {
-    if ($("auto").checked) applyActions(acts, d, null);
+    if ($("auto").checked || retry) applyActions(acts, d, null, retry);
     else {
       var ab = document.createElement("button"); ab.className = "pri"; ab.textContent = "Áp dụng " + acts.length + " thay đổi";
       ab.onclick = function () { ab.style.display = "none"; applyActions(acts, d, ab); };
@@ -530,7 +652,7 @@ function send(deep) {
   busy(true);
   getContext(function (err, c) {
     if (err) { busy(false); addMsg("bot", "Không đọc được bảng tính: " + err); return; }
-    api("/api/chat", "POST", { question: q, context: c.text, compat: compat(), deep: !!deep }, function (e, d) {
+    api("/api/chat", "POST", { question: q, context: c.text, compat: compat(), deep: !!deep, history: state.hist.slice(-3) }, function (e, d) {
       busy(false);
       if (e) { addMsg("bot", e); refreshMe(); return; }
       showBot(parseReply(d.reply), d.meta, d.cut);
@@ -550,7 +672,9 @@ function undoEntry(e, cb) {
     } else if (e.t === "borders") {
       var br = wb.worksheets.getItem(e.sheet).getRange(e.addr), ids = borderIds(e.rows, e.cols);
       for (i = 0; i < ids.length; i++) br.format.borders.getItem(ids[i]).style = "None";
-    } else if (e.t === "freeze") wb.worksheets.getItem(e.sheet).freezePanes.unfreeze();
+    } else if (e.t === "cf") wb.worksheets.getItem(e.sheet).getRange(e.addr).conditionalFormats.clearAll();
+    else if (e.t === "validation") wb.worksheets.getItem(e.sheet).getRange(e.addr).dataValidation.clear();
+    else if (e.t === "freeze") wb.worksheets.getItem(e.sheet).freezePanes.unfreeze();
     else if (e.t === "filter") wb.worksheets.getItem(e.sheet).autoFilter.remove();
     else if (e.t === "addsheet") wb.worksheets.getItem(e.name).delete();
     else if (e.t === "chart") wb.worksheets.getItem(e.sheet).charts.getItem(e.name).delete();
