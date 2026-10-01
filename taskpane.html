@@ -53,14 +53,15 @@
     </div>
 
     <div class="box">
-      <b>Nhờ trợ lý</b><br>
-      <button data-task="formula" data-hint="Viết công thức: ">Viết công thức</button>
-      <button data-task="optimize" data-hint="Tối ưu công thức ở vùng đang chọn: ">Tối ưu công thức</button>
-      <button data-task="explain" data-hint="Giải thích lỗi/công thức ở vùng đang chọn: ">Giải thích</button>
-      <div class="small">Chọn ô đầu tiên hoặc cả vùng muốn ghi công thức vào, rồi gõ yêu cầu.</div>
-      <textarea id="q" placeholder="vd: lấy đơn giá từ sheet Bảng giá theo mã hàng"></textarea>
+      <b>Nhờ trợ lý</b> <span class="small">(tự đọc sheet, tự chọn cách làm)</span><br>
+      <button data-q="Format cả sheet này cho đẹp, dễ đọc">✨ Format cho đẹp</button>
+      <button data-q="Tự quét và sửa các lỗi dữ liệu, công thức trong sheet này">🛠 Tự sửa lỗi</button>
+      <button data-q="Tạo sheet dashboard tổng hợp có bảng số liệu và biểu đồ từ dữ liệu sheet này">📊 Tạo dashboard</button>
+      <button data-q="Tối ưu các công thức trong sheet này cho gọn và nhanh">⚡ Tối ưu công thức</button>
+      <textarea id="q" placeholder="Gõ việc cần làm bằng lời thường, vd: tính thành tiền = số lượng x đơn giá cho cả cột, hoặc: tổng doanh thu theo từng nhân viên"></textarea>
       <button class="pri" id="sendBtn">Gửi</button>
       <button id="undoBtn" disabled>↶ Hoàn tác</button>
+      <label class="small"><input type="checkbox" id="auto" style="width:auto"> Tự làm luôn, không cần bấm xác nhận</label>
     </div>
 
     <div id="log"></div>
