@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cài Trợ lý Excel</title>
+<style>
+  :root{--bg:#f2f5f2;--surface:#fff;--fg:#18231d;--muted:#586861;--line:#d6ddd8;--accent:#1d6f42;--accent-fg:#fff;--soft:#e3f1e8;--code:#14201a;--code-fg:#dbe9e0;--warn:#9a4a07;--warn-bg:#fdf0e1}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1511;--surface:#17211b;--fg:#e3ece6;--muted:#9bada2;--line:#29362e;--accent:#52c386;--accent-fg:#08170e;--soft:#1b3326;--code:#0a100c;--code-fg:#dbe9e0;--warn:#f2aa62;--warn-bg:#2b1e0e;color-scheme:dark}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;font-size:16px;line-height:1.6;padding:24px 16px 48px}
+  main{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+  h1{margin:0;font-size:1.7rem;line-height:1.2}
+  h2{margin:0 0 8px;font-size:1.05rem}
+  p{margin:0}
+  .muted{color:var(--muted)}
+  .tabs{display:flex;gap:8px}
+  .tab{flex:1;font:inherit;font-weight:600;padding:12px;border:2px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;cursor:pointer}
+  .tab[aria-selected="true"]{border-color:var(--accent);background:var(--soft)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:10px}
+  button.big{font:inherit;font-weight:700;font-size:1.05rem;background:var(--accent);color:var(--accent-fg);border:0;border-radius:10px;padding:14px 22px;cursor:pointer;margin-top:6px}
+  button.small{font:inherit;font-weight:600;font-size:.9rem;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:7px 14px;cursor:pointer}
+  button:focus-visible,summary:focus-visible,.tab:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  pre{margin:8px 0;background:var(--code);color:var(--code-fg);border-radius:8px;padding:12px;font-family:Consolas,"SF Mono",Menlo,monospace;font-size:.82rem;white-space:pre-wrap;word-break:break-all}
+  details{border-top:1px solid var(--line);padding-top:10px;margin-top:14px}
+  summary{cursor:pointer;font-weight:600}
+  details > *:not(summary){margin-top:8px}
+  .warn{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 12px;font-size:.9rem}
+  [hidden]{display:none !important}
+  kbd{font-family:inherit;font-weight:600;background:var(--soft);padding:1px 7px;border-radius:5px}
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Cài Trợ lý Excel</h1>
+    <p class="muted">Làm một lần, khoảng 2 phút. Cần Excel 2016 trở lên (Windows hoặc Mac). Chưa hỗ trợ Excel trên điện thoại.</p>
+  </div>
+
+  <div class="warn" id="fileWarn" hidden>Bạn đang mở trang này từ máy, không phải từ địa chỉ GitHub. Các lệnh bên dưới sẽ sai địa chỉ. Hãy mở trang từ địa chỉ github.io rồi làm lại.</div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tabWin" aria-selected="true" type="button">Windows</button>
+    <button class="tab" role="tab" id="tabMac" aria-selected="false" type="button">Mac</button>
+  </div>
+
+  <section class="card" id="win">
+    <ol>
+      <li>Bấm nút bên dưới để tải file cài đặt. Mở file vừa tải (thường nằm trong thư mục <b>Downloads</b>) bằng cách bấm đúp. Nếu Windows hoặc trình duyệt hỏi, chọn <b>Keep</b> rồi <b>Run anyway</b> (Vẫn chạy).
+        <div><button class="big" id="dlWin" type="button">Tải file cài đặt</button></div>
+      </li>
+      <li>Thấy dòng <b>DA CAI XONG</b> thì bấm phím bất kỳ để đóng cửa sổ.</li>
+      <li><b>Tắt hẳn Excel</b> rồi mở lại. Vào tab <b>Home</b>, bấm nút <b>Trợ lý Excel</b> (nhóm "Trợ lý", bên phải thanh công cụ).</li>
+      <li>Nhập <b>mã truy cập</b> mà admin gửi riêng cho bạn.</li>
+    </ol>
+
+    <details>
+      <summary>Không tải hoặc không mở được file? Dùng cách dán lệnh</summary>
+      <ol>
+        <li>Bấm phím <kbd>Windows</kbd>, gõ <b>PowerShell</b>, bấm Enter.</li>
+        <li>Bấm nút Sao chép dưới đây, bấm chuột phải vào cửa sổ xanh để dán, rồi bấm Enter.</li>
+      </ol>
+      <pre id="psCmd"></pre>
+      <button class="small" id="cpPs" type="button">Sao chép lệnh</button>
+      <p class="muted">Thấy chữ <b>The operation completed successfully</b> là xong. Tắt hẳn Excel rồi mở lại như bước 3.</p>
+    </details>
+
+    <details>
+      <summary>Mở Excel mà không thấy nút Trợ lý Excel</summary>
+      <p>Vào <b>Insert → My Add-ins</b>, tìm mục <b>Developer Add-ins</b>, chọn <b>Trợ lý Excel</b>. Nếu vẫn không thấy, kiểm tra Excel đã tắt hẳn chưa (mở Task Manager, tắt mọi dòng Excel) rồi mở lại.</p>
+    </details>
+
+    <details>
+      <summary>Gỡ cài đặt</summary>
+      <p>Bấm nút dưới, mở file vừa tải, rồi tắt và mở lại Excel.</p>
+      <button class="small" id="dlUn" type="button">Tải file gỡ cài đặt</button>
+    </details>
+  </section>
+
+  <section class="card" id="mac" hidden>
+    <ol>
+      <li>Bấm <kbd>Cmd</kbd> + <kbd>Space</kbd>, gõ <b>Terminal</b>, bấm Enter.</li>
+      <li>Bấm nút Sao chép dưới đây, dán vào Terminal (<kbd>Cmd</kbd> + <kbd>V</kbd>) rồi bấm Enter.
+        <pre id="macCmd"></pre>
+        <button class="small" id="cpMac" type="button">Sao chép lệnh</button>
+      </li>
+      <li>Thấy chữ <b>DA CAI XONG</b> thì <b>thoát hẳn Excel</b> (<kbd>Cmd</kbd> + <kbd>Q</kbd>) rồi mở lại.</li>
+      <li>Vào <b>Insert → Add-ins → My Add-ins</b>, chọn <b>Trợ lý Excel</b>, hoặc tìm nút ở tab <b>Home</b>. Nhập <b>mã truy cập</b> admin gửi riêng.</li>
+    </ol>
+    <details>
+      <summary>Gỡ cài đặt</summary>
+      <pre id="macUn"></pre>
+      <button class="small" id="cpMacUn" type="button">Sao chép lệnh gỡ</button>
+    </details>
+  </section>
+
+  <p class="muted">Nếu gặp lỗi, chụp màn hình gửi người phụ trách. Không gửi mã truy cập của bạn cho ai khác.</p>
+</main>
+
+<script>
+(function () {
+  var ID = "7b1d3f2e-4c5a-4e8b-9a6f-1c2d3e4f5a6b";
+  var KEY = "HKCU\\Software\\Microsoft\\Office\\16.0\\WEF\\Developer";
+  var manifestUrl = new URL("manifest.xml", location.href).href;
+  if (location.protocol === "file:") document.getElementById("fileWarn").hidden = false;
+
+  var ps = '$d="$env:LOCALAPPDATA\\TroLyExcel"; New-Item -ItemType Directory -Force -Path $d | Out-Null; ' +
+    'Invoke-WebRequest -UseBasicParsing -Uri "' + manifestUrl + '" -OutFile "$d\\manifest.xml"; ' +
+    'reg add "' + KEY + '" /v "' + ID + '" /t REG_SZ /d "$d\\manifest.xml" /f';
+  var mac = 'D=~/Library/Containers/com.microsoft.Excel/Data/Documents/wef; mkdir -p $D && curl -fsSL "' + manifestUrl + '" -o $D/manifest.xml && echo DA CAI XONG';
+  var macUn = 'rm -f ~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/manifest.xml && echo DA GO XONG';
+  document.getElementById("psCmd").textContent = ps;
+  document.getElementById("macCmd").textContent = mac;
+  document.getElementById("macUn").textContent = macUn;
+
+  var batInstall = [
+    "@echo off",
+    "title Cai dat Tro ly Excel",
+    'set "URL=' + manifestUrl + '"',
+    'set "DIR=%LOCALAPPDATA%\\TroLyExcel"',
+    'if not exist "%DIR%" mkdir "%DIR%"',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing -Uri \'%URL%\' -OutFile \'%DIR%\\manifest.xml\' } catch { exit 1 }"',
+    "if errorlevel 1 goto fail",
+    'reg add "' + KEY + '" /v "' + ID + '" /t REG_SZ /d "%DIR%\\manifest.xml" /f >nul',
+    "if errorlevel 1 goto fail",
+    "echo.",
+    "echo DA CAI XONG.",
+    "echo Hay TAT HAN Excel roi mo lai. Tim nut Tro ly Excel o tab Home.",
+    "pause",
+    "exit /b 0",
+    ":fail",
+    "echo.",
+    "echo Khong cai duoc. Kiem tra mang roi thu lai, hoac bao nguoi ho tro.",
+    "pause",
+    "exit /b 1"
+  ].join("\r\n") + "\r\n";
+  var batRemove = [
+    "@echo off",
+    "title Go Tro ly Excel",
+    'reg delete "' + KEY + '" /v "' + ID + '" /f >nul 2>&1',
+    'rmdir /s /q "%LOCALAPPDATA%\\TroLyExcel" >nul 2>&1',
+    "echo.",
+    "echo DA GO XONG. Hay tat han Excel roi mo lai.",
+    "pause"
+  ].join("\r\n") + "\r\n";
+
+  function download(name, text) {
+    var blob = new Blob([text], { type: "application/octet-stream" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function copy(btn, text) {
+    var label = btn.textContent;
+    function ok() { btn.textContent = "Đã chép ✓"; setTimeout(function () { btn.textContent = label; }, 1800); }
+    function fallback() {
+      var t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+      var done = false; try { done = document.execCommand("copy"); } catch (e) {}
+      t.remove(); if (done) ok(); else btn.textContent = "Bôi đen lệnh rồi bấm Ctrl+C";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fallback); else fallback();
+  }
+
+  document.getElementById("dlWin").onclick = function () { download("cai-tro-ly-excel.bat", batInstall); };
+  document.getElementById("dlUn").onclick = function () { download("go-tro-ly-excel.bat", batRemove); };
+  document.getElementById("cpPs").onclick = function () { copy(this, ps); };
+  document.getElementById("cpMac").onclick = function () { copy(this, mac); };
+  document.getElementById("cpMacUn").onclick = function () { copy(this, macUn); };
+
+  var tw = document.getElementById("tabWin"), tm = document.getElementById("tabMac");
+  function show(isMac) {
+    document.getElementById("win").hidden = isMac; document.getElementById("mac").hidden = !isMac;
+    tw.setAttribute("aria-selected", isMac ? "false" : "true"); tm.setAttribute("aria-selected", isMac ? "true" : "false");
+  }
+  tw.onclick = function () { show(false); }; tm.onclick = function () { show(true); };
+  if (/Mac/i.test(navigator.platform || navigator.userAgent) && !/iPhone|iPad/i.test(navigator.userAgent)) show(true);
+})();
+</script>
+</body>
+</html>
