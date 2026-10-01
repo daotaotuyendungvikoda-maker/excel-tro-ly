@@ -1,4 +1,6 @@
-var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* <-- SỬA */
+var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* đã điền sẵn */
+var APP_VERSION = "1.2.0"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
+var SERVER_VERSION = "";
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
 var state = { code: "", lastQ: "", undo: [] };
@@ -24,6 +26,7 @@ function api(path, method, body, cb) {
   x.open(method, WORKER + path);
   x.setRequestHeader("Content-Type", "application/json");
   x.setRequestHeader("X-User-Code", state.code);
+  x.setRequestHeader("X-App-Version", APP_VERSION);
   x.onload = function () {
     var d;
     try { d = JSON.parse(x.responseText); } catch (e) { d = { error: "Phản hồi không hợp lệ" }; }
@@ -58,6 +61,12 @@ function updateQuota(q, meta) {
   setBar($("barPool"), q.pool_left_pct, true);
   if (meta) $("badge").textContent = meta.label;
 }
+function showVersion() {
+  var el = $("ver"); if (!el) return;
+  var same = SERVER_VERSION === APP_VERSION;
+  el.textContent = "Add-in v" + APP_VERSION + " · Máy chủ v" + (SERVER_VERSION || "?") + (SERVER_VERSION && !same ? " ⚠ chưa cập nhật đủ, nhờ admin dán lại code" : "");
+  el.style.color = SERVER_VERSION && !same ? "#c00" : "#777";
+}
 function refreshMe() {
   api("/api/me", "GET", null, function (err, d) {
     if (err) {
@@ -66,6 +75,8 @@ function refreshMe() {
       return;
     }
     $("login").className = "hide"; $("main").className = "";
+    SERVER_VERSION = d.version || "cũ";
+    showVersion();
     updateQuota(d.quota, null);
   });
 }
