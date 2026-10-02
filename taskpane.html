@@ -1,75 +1,503 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="utf-8">
-<meta http-equiv="X-UA-Compatible" content="IE=edge">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Trợ lý Excel</title>
-<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<style>
-  body{font-family:"Segoe UI",Arial,sans-serif;font-size:13px;margin:0;padding:10px;color:#222}
-  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-  .top b{font-size:15px}
-  .badge{background:#e8f0fe;color:#1a56c4;border-radius:10px;padding:2px 8px;font-size:12px}
-  .bar{height:8px;background:#e3e3e3;border-radius:4px;overflow:hidden;margin:2px 0 4px}
-  .bar i{display:block;height:100%;background:#2e9e5b}
-  .bar i.warn{background:#e8a13a}.bar i.bad{background:#d64545}
-  .small{font-size:12px;color:#555}
-  .box{background:#f5f7fa;border-radius:6px;padding:8px;margin:8px 0}
-  button{font-family:inherit;font-size:13px;padding:5px 9px;margin:2px 2px 2px 0;border:1px solid #bbb;background:#fff;border-radius:4px;cursor:pointer}
-  button.pri{background:#1a56c4;color:#fff;border-color:#1a56c4}
-  button:disabled{opacity:.5;cursor:default}
-  textarea{width:100%;box-sizing:border-box;height:62px;font-family:inherit;font-size:13px;padding:5px}
-  input{width:100%;box-sizing:border-box;padding:6px;font-size:13px}
-  .msg{margin:8px 0;padding:8px;border-radius:6px;white-space:pre-wrap;word-wrap:break-word}
-  .me{background:#e8f0fe}.bot{background:#f1f3f4}
-  .formula{font-family:Consolas,monospace;background:#fff;border:1px solid #ddd;padding:5px;margin:6px 0;word-break:break-all}
-  .meta{font-size:11px;color:#777;margin-top:4px}
-  .item{padding:4px 0;border-bottom:1px solid #eee}
-  .item button{padding:1px 6px}
-  .hide{display:none}
-</style>
-</head>
-<body>
-  <div class="top"><b>Trợ lý Excel</b><span class="badge" id="badge">chưa dùng</span></div>
+/* ====== CẤU HÌNH (sửa ở đây) ====== */
+const VERSION = "1.11.0";               /* số phiên bản máy chủ: tăng mỗi lần sửa code, và đổi APP_VERSION trong taskpane.js cho khớp */
+const VERSION_NOTE = "1.11.0: admin chỉnh được số lượt/ngày (chung và riêng từng người), đổi mật khẩu, chọn model, tạm dừng bảo trì, đổi tên/đặt lại lượt; 1.10.0: soát bảng lương một kỳ (tự nhận cột, công thức số đông, KPI-thưởng), sinh nhật và thâm niên; 1.9.0: công cụ gộp nhiều file, lấy dữ liệu từ file khác, soát công thức/số gõ đè, bất thường, chênh lệch quỹ, truy vấn bằng lời; 1.8.0: tóm tắt bằng thẻ chỉ số, kiểm lỗi trực quan không đè dữ liệu, gợi ý hàm có nút chèn/chép, công tắc cho phép sửa trực tiếp; 1.7.1: gom bước làm thành 1 dòng thu gọn, tự soát lại kết quả sau khi làm; 1.7.0: giao diện chat như bản chính hãng, nút dừng, tự thử lại, gợi ý câu tiếp, tự lưu bản sao an toàn; 1.6.0: Excel tự tính số liệu để trả lời chính xác, chuẩn trình bày gọn sạch, ẩn đường lưới; 1.5.0: AI tự xin đọc thêm vùng, địa chỉ ô bấm được; 1.4.1: AI điều khiển bộ format/dọn dữ liệu có sẵn bằng 1 lệnh; 1.4.0: trả lời chạy dần (streaming), làm tới đâu áp dụng tới đó, việc ghi/sửa mặc định dùng model mạnh";
+const USD_VND = 25000;                 /* tỷ giá tạm tính */
+const DEFAULT_LIMIT_VND = 80000;       /* hạn mức mặc định / người / tháng */
+const DAILY_MAX = 40;                  /* tối đa lượt / người / ngày */
+const DEFAULT_BUDGET_VND = 2500000;    /* quỹ chung (~$100) */
+const MAX_CONTEXT_CHARS = 60000;
+/* Cấu hình chỉnh được trong trang /admin (lưu ở KV, ghi đè các hằng số ở trên) */
+let CFG = {};
+async function loadCfg(env) {
+  const c = (await env.KV.get("config", "json")) || {};
+  CFG = c;
+  return c;
+}
+function dayMax(u) { return Number(u && u.day_max) || Number(CFG.daily_max) || DAILY_MAX; }
+function defLimit() { return Number(CFG.default_limit) || DEFAULT_LIMIT_VND; }
+function ctxMax() { return Number(CFG.max_context) || MAX_CONTEXT_CHARS; }
+async function sha(text) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(d)).map(function (x) { return x.toString(16).padStart(2, "0"); }).join("");
+}
+/* Giá mỗi 1 triệu token (USD). HÃY KIỂM TRA LẠI trên trang giá Anthropic. */
+const TIERS = {
+  haiku:  { model: "claude-haiku-4-5-20251001", inUsd: 1, outUsd: 5,  label: "Nhanh · Haiku" },
+  sonnet: { model: "claude-sonnet-5",           inUsd: 3, outUsd: 15, label: "Cân bằng · Sonnet" }
+};
 
-  <div id="login" class="box hide">
-    Nhập mã truy cập admin đã gửi cho chị:
-    <input id="codeIn" placeholder="mã truy cập">
-    <button class="pri" id="loginBtn">Đăng nhập</button>
-    <div class="small" id="loginErr" style="color:#c00"></div>
-  </div>
+/* ====== TIỆN ÍCH ====== */
+function vnNow() { return new Date(Date.now() + 7 * 3600 * 1000); }
+function monthKey() { return vnNow().toISOString().slice(0, 7); }
+function dayKey() { return vnNow().toISOString().slice(0, 10); }
+function cors(env) {
+  return {
+    "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Code, X-Admin-Password, X-App-Version",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+  };
+}
+function out(env, status, obj) {
+  return new Response(JSON.stringify(obj), {
+    status: status,
+    headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors(env))
+  });
+}
+function newCode() {
+  const a = new Uint8Array(8);
+  crypto.getRandomValues(a);
+  let s = "";
+  for (const b of a) s += (b % 36).toString(36);
+  return s;
+}
+async function getUser(env, code) {
+  if (!/^[A-Za-z0-9-]{6,40}$/.test(code || "")) return null;
+  const u = await env.KV.get("user:" + code, "json");
+  if (!u) return null;
+  if (u.month !== monthKey()) { u.month = monthKey(); u.used_vnd = 0; }
+  if (u.day !== dayKey()) { u.day = dayKey(); u.day_count = 0; }
+  return u;
+}
+async function getPool(env) {
+  return (await env.KV.get("pool", "json")) || { budget_vnd: DEFAULT_BUDGET_VND, spent_vnd: 0 };
+}
+function quotaOf(u, pool) {
+  const left = Math.max(0, pool.budget_vnd - pool.spent_vnd);
+  return {
+    used_vnd: u.used_vnd, limit_vnd: u.limit_vnd,
+    day_count: u.day_count, day_max: dayMax(u),
+    pool_left_pct: pool.budget_vnd > 0 ? Math.round(left * 100 / pool.budget_vnd) : 0
+  };
+}
 
-  <div id="main" class="hide">
-    <div class="small" id="ver"></div>
-    <div class="small" id="quotaMe"></div>
-    <div class="bar"><i id="barMe"></i></div>
-    <div class="small" id="quotaPool"></div>
-    <div class="bar"><i id="barPool"></i></div>
+function apiBase(env) { return String(env.API_BASE || "https://api.anthropic.com").replace(/\/+$/, ""); }
+function cleanKey(env) { return String(env.ANTHROPIC_API_KEY || "").replace(/[\s"']/g, ""); }
+function apiHeaders(env, json) {
+  const h = { "x-api-key": cleanKey(env), "anthropic-version": "2023-06-01" };
+  if (env.API_BASE) h["Authorization"] = "Bearer " + cleanKey(env);
+  if (json) h["content-type"] = "application/json";
+  return h;
+}
 
-    <div class="box">
-      <b>Kiểm tra lỗi sheet hiện tại</b> <span class="small">(không tốn hạn mức)</span><br>
-      <button class="pri" id="scanBtn">Kiểm tra lỗi</button>
-      <div id="scanOut"></div>
-    </div>
+const SYSTEM_BASE =
+  "Bạn là trợ lý Excel TỰ CHỦ cho nhân viên kế toán, hành chính, nhân sự, lương ở Việt Nam. Người dùng không rành Excel. " +
+  "NGUYÊN TẮC: tự quyết định và tự làm luôn, KHÔNG hỏi lại, KHÔNG liệt kê lựa chọn. Yêu cầu mơ hồ (vd 'format cho đẹp', 'sửa lỗi', 'làm báo cáo') thì dựa vào dữ liệu thật trong ngữ cảnh, chọn phương án hợp lý nhất rồi làm; ghi trong message bạn đã chọn gì. Chỉ hỏi lại khi sheet hoàn toàn trống. " +
+  "Trả lời tiếng Việt, ngắn gọn (message tối đa 4 câu). Không tự tính hay điền số liệu thay công thức. Không bịa tên cột/sheet không có trong ngữ cảnh. " +
+  "Dữ liệu nhạy cảm đã bị thay bằng <ẨN>: không hỏi về nó, không ghi đè nó bằng set_values. " +
+  "Tỷ lệ BHXH, thuế, giảm trừ phải đặt ở ô tham số riêng và tham chiếu, không viết cứng trong công thức. " +
+  "Công thức: tên hàm tiếng Anh, đối số ngăn cách bằng dấu phẩy, bắt đầu bằng =. Công thức viết cho Ô TRÊN CÙNG BÊN TRÁI của range, tham chiếu tương đối để tự điền cho cả range. Tham chiếu sheet khác dạng 'Tên sheet'!A1. " +
+  "ĐẦU RA: chỉ MỘT đối tượng JSON, không chữ nào khác: " +
+  '{"message":"...","actions":[...],"warnings":"... hoặc null","suggest":["gợi ý việc tiếp theo ngắn","tối đa 3, mỗi câu dưới 8 từ, viết như chị sẽ gõ"]}. ' +
+  'Nếu cần xem số liệu ngoài ngữ cảnh (sheet khác, vùng xa, nhiều dòng hơn) thì trả {"message":"Em xem thêm...","reads":[{"sheet":"Tên","range":"A1:H60"}],"actions":[]} (tối đa 3 vùng, 1500 ô); hệ thống sẽ gửi dữ liệu lại để bạn làm tiếp, chỉ xin một lần. Với câu hỏi cần SỐ LIỆU (tổng, đếm, trung bình, lớn nhất, ai cao nhất, so sánh, tỷ lệ...) KHÔNG được tự cộng trừ trong đầu hay đoán từ mẫu: trả {\"message\":\"Em tính...\",\"calc\":[{\"label\":\"Tổng lương tháng 9\",\"formula\":\"=SUM(Lương!E2:E400)\"}],\"actions\":[]} (tối đa 12 công thức, chỉ đọc, dùng đúng vùng dữ liệu thật); Excel tự tính và gửi kết quả lại, rồi bạn trả lời bằng đúng các số đó (kèm địa chỉ ô/vùng đã dùng để chị kiểm tra). Muốn ghi kết quả vào sheet thì dùng set_formula để số luôn sống theo dữ liệu. Có thể vừa xin calc/reads trong cùng một lượt nhưng không kèm actions. Bạn TOÀN QUYỀN quyết định và thực hiện mọi thay đổi cần thiết trong file để đạt kết quả đúng nhất, kể cả sửa ô đã có; chỉ tránh xóa dữ liệu gốc không liên quan yêu cầu. KHỐI HIỂN THỊ TRỰC QUAN (tùy chọn, thêm vào JSON cùng cấp với message): \"kpis\":[{\"label\":\"Tổng doanh thu\",\"value\":\"1.250.000.000 đ\",\"note\":\"tăng 8% so với tháng trước\",\"ref\":\"Sheet!F2:F400\"}] (4-8 thẻ chỉ số, value đã định dạng dễ đọc, số lấy từ kết quả calc); \"formulas\":[{\"title\":\"Thành tiền\",\"formula\":\"=B2*C2\",\"explain\":\"Nhân số lượng với đơn giá\",\"cell\":\"D2\"}] (tối đa 4 gợi ý công thức, mỗi cái cho ô cụ thể, không ghi vào file); \"issues\":[{\"ref\":\"D5\",\"text\":\"Số lưu dạng chữ\",\"fix\":\"đổi thành số 26\"}] (danh sách chỗ nghi ngờ, ref là ô đơn A1 hoặc Sheet!A1, tối đa 60). Khi chị bảo “tóm tắt”: dùng calc tính chính xác rồi trả kpis + message 2-3 ý đáng chú ý (tăng giảm, bất thường, nhóm lớn nhất) + suggest các việc nên làm tiếp, KHÔNG ghi file trừ khi chị bảo tạo sheet. Khi chị bảo “kiểm lỗi/soát/chưa sửa”: trả issues, không sửa gì. Khi chị bảo “gợi ý hàm/công thức”: trả formulas, không ghi. Muốn nhấn mạnh ô nào mà không đổi dữ liệu thì dùng {\"op\":\"mark_cells\",\"cells\":[\"D5\",\"E7\"],\"fill\":\"#FFF2CC\"}. Nhắc đến ô cụ thể trong message thì viết địa chỉ rõ (vd D12, Lương!E5) để chị bấm nhảy tới. ' +
+  "Tối đa 25 action. Các action được phép (mọi range viết kiểu A1, ví dụ A1:H1, D2:D500, A:C; thêm trường sheet nếu không phải sheet đang mở): " +
+  '{"op":"set_formula","range":"D2:D500","formula":"=B2*C2"} ; ' +
+  '{"op":"set_values","range":"A1","values":[["Tổng hợp"]]} (tối đa 300 ô) ; ' +
+  '{"op":"format","range":"A1:H1","bold":true,"italic":false,"fill":"#1F4E78","color":"#FFFFFF","size":11,"align":"center|left|right","wrap":true,"number_format":"#,##0","borders":true} (mọi trường đều tùy chọn) ; ' +
+  '{"op":"col_width","range":"A:H","width":"auto"} hoặc width là số ký tự ; ' +
+  '{"op":"query","sheet":"Tên sheet nguồn (tùy chọn)","where":[{"col":"Tháng","op":"=","value":"2026-09"},{"col":"Khách mới","op":"<","col2":"Chỉ tiêu khách mới"}],"group_by":["Mã NV"],"aggregates":[{"col":"Hoa hồng","fn":"sum","as":"Hoa hồng"}],"pivot":{"col":"Tháng","values":["2026-08","2026-09"]},"having":[{"as":"Hoa hồng (2026-09)","op":">","value":0}],"sort":{"by":"Hoa hồng (2026-09)","order":"desc"},"top":20,"columns":["Mã NV","Họ tên"],"out":{"sheet":"Top 20","chart":"BarClustered","title":"..."}} (TRUY VẤN chạy chính xác trên máy, kết quả ra sheet mới; mọi trường tùy chọn. op so sánh: = != > >= < <= contains not_contains empty not_empty in; where.value là số/chuỗi, values là mảng cho in, col2 là so với cột khác cùng dòng; với cột ngày/kỳ có thể so với \"yyyy-mm\" (vd \"2026-09\"); fn: sum count avg min max countd; pivot tách từng giá trị của cột kỳ thành các cột và tự thêm cột Chênh lệch và % chênh khi có đúng 2 giá trị; tên cột phải giống tiêu đề thật trong ngữ cảnh) ; ' +
+  '{"op":"mark_cells","cells":["D5","E7"],"fill":"#FFF2CC"} (tô nổi các ô đơn, không đổi dữ liệu) ; ' +
+  '{"op":"gridlines","show":false} (ẩn/hiện đường lưới của sheet) ; ' +
+  '{"op":"freeze","rows":1} ; {"op":"filter","range":"A1:H500"} ; ' +
+  '{"op":"text_to_number","range":"C2:C500"} (đổi số lưu dạng chữ thành số) ; {"op":"trim_text","range":"A2:B500"} (xóa khoảng trắng thừa) ; ' +
+  '{"op":"add_sheet","name":"Tổng hợp"} ; ' +
+  '{"op":"chart","sheet":"Tổng hợp","source_sheet":"Tổng hợp","range":"A1:B6","type":"ColumnClustered|BarClustered|Line|Pie|Area","title":"...","at":"E2"}. ' +
+  '{"op":"sort","range":"A1:H100","by":"D","order":"desc|asc"} (dòng đầu là tiêu đề) ; ' +
+  '{"op":"highlight","range":"B2:B500","rule":"duplicates|greater_than|less_than|equals|contains|formula","value":"...","fill":"#FFC7CE","color":"#9C0006"} (tô màu theo điều kiện, tự cập nhật khi dữ liệu đổi; rule formula thì value là công thức viết cho ô đầu của range, vd =$E2<TODAY()+30) ; ' +
+  '{"op":"dropdown","range":"F2:F200","items":["Đạt","Không đạt"]} (ô chọn sẵn từ danh sách) ; ' +
+  "Luôn dùng range có hàng cụ thể khi set_formula/set_values (lấy hàng cuối từ ngữ cảnh, dư ra chút nếu dữ liệu còn tăng). " +
+  '{"op":"smart_format","range":"A1:H500"} (range tùy chọn; bộ định dạng chuyên nghiệp có sẵn: tự nhận ra tiêu đề trang, dòng tiêu đề, dòng tổng, cột tiền/ngày/%/mã/số điện thoại, rồi căn lề, định dạng số, viền, độ rộng cột, cố định dòng đầu, bật bộ lọc; đẹp và chính xác hơn tự viết từng format) ; ' +
+  '{"op":"clean_data","range":"A1:H500"} (range tùy chọn; dọn nhanh cả vùng: cắt khoảng trắng thừa, số/ngày dạng chữ thành số/ngày thật, giữ nguyên mã có số 0 đầu) ; ' +
+  "CHUẨN TRÌNH BÀY (gọn, sạch, chuyên nghiệp): tối đa 2 màu chủ đạo (xanh đậm #1F4E78 và xanh nhạt #EAF1F8, cảnh báo dùng đỏ nhạt #FFC7CE/xanh lá nhạt #C6EFCE), cùng một font, không dùng màu chói; không gộp ô (merge); tiêu đề trang cỡ 14-16 đậm ở A1, cách bảng 1 dòng; mỗi bảng cách nhau ít nhất 1 dòng/cột trống; số căn phải, chữ căn trái, tiêu đề căn giữa; tiền #,##0, ngày dd/mm/yyyy, % 0.0%; sheet dashboard/báo cáo thì {\"op\":\"gridlines\",\"show\":false} cho sạch, khối chỉ số chính (KPI) ở trên cùng, biểu đồ đặt thẳng hàng bên dưới hoặc bên phải bảng, không đè lên dữ liệu, mỗi biểu đồ có tiêu đề rõ. Bảng nào cũng phải qua smart_format hoặc format tương đương, đừng để bảng trần. Khi chị muốn LỌC, XẾP HẠNG, TOP N, TỔNG HỢP THEO NHÓM, SO SÁNH HAI KỲ ra một bảng kết quả (vd 'top 20 hoa hồng cao nhất chưa đạt KPI so với tháng trước', 'doanh thu theo vùng 2 tháng gần nhất') thì ưu tiên dùng action query (chính xác, chạy trên mọi phiên bản Excel, không phụ thuộc hàm lọc); chỉ dùng công thức khi chị cần số sống theo dữ liệu. Với 'tháng này/tháng trước' hãy tính từ ngày hôm nay trong hệ thống. Mẫu 'format cho đẹp / trình bày / làm báo cáo đẹp': action đầu tiên là smart_format, sau đó chỉ thêm format riêng nếu chị yêu cầu cụ thể (đổi màu, tô dòng tổng, đổi cỡ chữ...). Với sheet mới do bạn tạo (dashboard, tổng hợp): ghi dữ liệu rồi smart_format cho bảng, đặt tiêu đề lớn đậm ở A1, thêm chart. " +
+  "Mẫu 'sửa lỗi / quét lỗi / dọn': action đầu là clean_data cho cả sheet (nhanh), rồi xử lý riêng ô công thức lỗi/lệch bằng set_formula, ô lẻ bằng set_values; ngoài ra text_to_number cho số lưu dạng chữ (hiểu cả '26 ngày', '1.250.000đ'), trim_text cho cột chữ có khoảng trắng thừa, set_formula sửa công thức lỗi/lệch cả cột. " +
+  "Ngữ cảnh có các mục 'Ô CHỮ LẪN TRONG CỘT SỐ', 'Ô LỆCH CÔNG THỨC SO VỚI CỘT' và danh sách ô báo lỗi kèm địa chỉ: dùng đúng địa chỉ đó (ô lệch công thức thì set_formula lại cả cột theo công thức của dòng đầu, trừ khi lệch là có chủ ý và nói rõ). Với vài ô lẻ không chắc công cụ xử lý được thì dùng set_values ghi số đúng vào từng ô (vd E6 thành 26). Chỉ khẳng định trong message những gì các action sẽ thực sự làm, không hứa thêm. Ô công thức bị gõ tay đè (số cứng giữa cột công thức) thì set_formula lại cả cột. " +
+  "Mẫu dashboard: add_sheet 'Tổng hợp', dùng SUMIFS/COUNTIFS/SUMPRODUCT tham chiếu vùng dữ liệu, nhãn nhóm lấy từ mục 'giá trị khác nhau' trong ngữ cảnh (set_values), rồi chart, rồi format. ";
+const DOMAIN =
+  "HIỂU CÂU NGẮN: chị thường gõ cực ngắn, hãy tự suy ra ý. 'tổng'=SUM/SUMIFS (đặt ở dòng ngay dưới bảng hoặc sheet Tổng hợp), 'đếm'=COUNTIFS, 'trùng'=highlight duplicates (không xóa), 'lọc'=filter, 'đẹp'=format, 'sắp xếp'=sort, 'xếp hạng'=RANK, 'so sánh/đối chiếu'=công thức MATCH/COUNTIF báo khớp hay lệch, 'hết hạn/sắp đến hạn'=highlight dạng formula với TODAY(), 'tuổi/thâm niên'=DATEDIF. " +
+  "Nếu có mục 'Nội dung vùng chị đang chọn' và câu nói 'ở đây/ô này/cột này/vùng này' thì làm đúng vùng đó; nếu chỉ chọn 1 ô thì coi là ô bắt đầu. Nếu không chọn gì rõ ràng thì tự tìm cột/bảng liên quan nhất. 'Làm tiếp/đổi màu khác/cột đó' thì dựa vào mục các lần trước. " +
+  "QUY ƯỚC: không ghi đè dữ liệu gốc của chị trừ khi chị bảo sửa; cột mới thêm ngay bên phải bảng với tiêu đề rõ ràng và cùng định dạng với cột bên cạnh; tổng cộng đặt dưới bảng cách 1 dòng hoặc ở sheet Tổng hợp; ngày hiển thị dd/mm/yyyy; tiền #,##0. Dùng vùng dữ liệu thật trong ngữ cảnh, dư ra một ít dòng nếu dữ liệu còn tăng. " +
+  "KẾ TOÁN: thành tiền = SL x đơn giá; VAT là ô tham số (8%/10% tùy chị điền); công nợ còn lại = phải thu - đã thu; tuổi nợ = TODAY() - hạn thanh toán, chia nhóm 0-30/31-60/61-90/trên 90; đối chiếu = tổng 2 bên và chênh lệch. " +
+  "LƯƠNG/NHÂN SỰ: lương theo công = lương cơ bản / công chuẩn x ngày công + phụ cấp + thưởng; BHXH, BHYT, BHTN, giảm trừ, biểu thuế TNCN và công chuẩn phải đặt trong bảng tham số riêng (sheet hoặc vùng Tham số) do chị điền, KHÔNG viết cứng số theo trí nhớ vì quy định thay đổi; nếu chưa có thì tạo bảng tham số với tiêu đề rõ, đặt giá trị gợi ý đã biết và ghi trong warnings nhắc chị kiểm tra theo quy định hiện hành. " +
+  "HÀNH CHÍNH/KINH DOANH: hợp đồng sắp hết hạn (30 ngày) tô màu bằng highlight formula; doanh thu theo nhân viên/khu vực/tháng dùng SUMIFS, % đạt KPI = thực đạt / chỉ tiêu (chia an toàn bằng IFERROR), top N dùng LARGE + INDEX/MATCH. " +
+  "message tối đa 2 câu ngắn, dễ hiểu, nói bằng việc của chị (không nói tên hàm trừ khi cần). ";
+const COMPAT = {
+  full: "Excel mới (365/2021): được dùng XLOOKUP, LET, FILTER nếu thật sự cần.",
+  legacy: "Excel có thể là 2016/2019: KHÔNG dùng XLOOKUP, LET, FILTER, UNIQUE, SORT, XMATCH, hàm mảng động. Ưu tiên INDEX/MATCH, SUMIFS, IFERROR."
+};
+const HEAVY_RE = /sửa|lỗi|sai |trùng|sắp xếp|so sánh|thuế|dashboard|tổng hợp|báo cáo|biểu đồ|tối ưu|đối chiếu|cân đối|bảng lương|thuế|bhxh|nhiều sheet|lập bảng|phân tích/i;
 
-    <div class="box">
-      <b>Nhờ trợ lý</b> <span class="small">(tự đọc sheet, tự chọn cách làm)</span><br>
-      <button data-q="Format cả sheet này cho đẹp, dễ đọc">✨ Format cho đẹp</button>
-      <button data-q="Tự quét và sửa các lỗi dữ liệu, công thức trong sheet này">🛠 Tự sửa lỗi</button>
-      <button data-q="Tạo sheet dashboard tổng hợp có bảng số liệu và biểu đồ từ dữ liệu sheet này">📊 Tạo dashboard</button>
-      <button data-q="Tối ưu các công thức trong sheet này cho gọn và nhanh">⚡ Tối ưu công thức</button>
-      <button data-q="Tô màu các dòng trùng nhau và các giá trị bất thường trong sheet này">🔎 Tìm trùng</button>
-      <textarea id="q" placeholder="Gõ ngắn cũng được: tổng cột D · tô màu trùng · sắp xếp theo ngày · tính thành tiền · xếp hạng"></textarea>
-      <div class="small">Muốn làm đúng chỗ nào thì bôi đen chỗ đó trước khi gửi.</div>
-      <button class="pri" id="sendBtn">Gửi</button>
-      <button id="undoBtn" disabled>↶ Hoàn tác</button>
-      <label class="small"><input type="checkbox" id="auto" style="width:auto"> Tự làm luôn, không cần bấm xác nhận</label>
-    </div>
+function hasJson(t) {
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a < 0 || b <= a) return false;
+  try { JSON.parse(t.substring(a, b + 1)); return true; } catch (e) { return false; }
+}
+async function callAI(env, T, system, content) {
+  const r = await fetch(apiBase(env) + "/v1/messages", {
+    method: "POST",
+    headers: apiHeaders(env, true),
+    body: JSON.stringify({
+      model: T.model, max_tokens: 3000, system: system,
+      messages: [{ role: "user", content: content }]
+    })
+  });
+  if (!r.ok) {
+    const errText = await r.text();
+    console.log("AI error", r.status, errText);
+    return { err: "Dịch vụ AI báo lỗi (" + r.status + "): " + errText.slice(0, 300) };
+  }
+  const data = await r.json();
+  return {
+    text: (data.content || []).filter(function (b) { return b.type === "text"; }).map(function (b) { return b.text; }).join(""),
+    tin: (data.usage && data.usage.input_tokens) || 0,
+    tout: (data.usage && data.usage.output_tokens) || 0,
+    cut: data.stop_reason === "max_tokens"
+  };
+}
+function costOf(T, tin, tout, env) {
+  return Math.ceil((tin * T.inUsd + tout * T.outUsd) / 1e6 * USD_VND * (Number(env.PRICE_MULT) || 1));
+}
+function modelOf(env, tier) {
+  return (tier === "sonnet" ? (CFG.model_smart || env.MODEL_SMART) : (CFG.model_fast || env.MODEL_FAST)) || TIERS[tier].model;
+}
 
-    <div id="log"></div>
-    <div class="small">Nhớ lưu bản sao file trước khi nhờ trợ lý sửa. Nút Hoàn tác thay cho Ctrl+Z (Ctrl+Z thường không hoàn tác được thay đổi của add-in).</div>
-  </div>
-<script src="taskpane.js"></script>
-</body>
-</html>
+/* ====== TRẢ LỜI CHẠY DẦN (streaming) ====== */
+async function chatStream(req, env, u, pool, tier, reason, system, content) {
+  const T = Object.assign({}, TIERS[tier], { model: modelOf(env, tier) });
+  const code = req.headers.get("X-User-Code");
+  let r;
+  try {
+    r = await fetch(apiBase(env) + "/v1/messages", {
+      method: "POST",
+      headers: apiHeaders(env, true),
+      body: JSON.stringify({ model: T.model, max_tokens: 4000, stream: true, system: system, messages: [{ role: "user", content: content }] })
+    });
+  } catch (e) { return out(env, 502, { error: "Không gọi được dịch vụ AI. Thử lại sau." }); }
+  if (!r.ok) {
+    const errText = await r.text();
+    console.log("AI stream error", r.status, errText);
+    return out(env, 502, { error: "Dịch vụ AI báo lỗi (" + r.status + "): " + errText.slice(0, 300) });
+  }
+  const ts = new TransformStream();
+  const writer = ts.writable.getWriter();
+  const enc = new TextEncoder();
+  const send = function (o) { return writer.write(enc.encode("data: " + JSON.stringify(o) + "\n\n")); };
+  (async function () {
+    let tin = 0, tout = 0, cut = false;
+    try {
+      const ct = r.headers.get("content-type") || "";
+      if (ct.indexOf("text/event-stream") < 0) {
+        /* cổng không hỗ trợ stream: nhận trọn gói rồi gửi một lần */
+        const d = await r.json();
+        const txt = (d.content || []).filter(function (b) { return b.type === "text"; }).map(function (b) { return b.text; }).join("");
+        tin = (d.usage && d.usage.input_tokens) || 0; tout = (d.usage && d.usage.output_tokens) || 0;
+        cut = d.stop_reason === "max_tokens";
+        await send({ t: txt });
+      } else {
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const x = await reader.read();
+          if (x.done) break;
+          buf += dec.decode(x.value, { stream: true });
+          let i;
+          while ((i = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, i).trim();
+            buf = buf.slice(i + 1);
+            if (line.indexOf("data:") !== 0) continue;
+            const js = line.slice(5).trim();
+            if (!js || js === "[DONE]") continue;
+            let ev; try { ev = JSON.parse(js); } catch (e) { continue; }
+            if (ev.type === "message_start" && ev.message && ev.message.usage) tin = ev.message.usage.input_tokens || 0;
+            else if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") await send({ t: ev.delta.text });
+            else if (ev.type === "message_delta") {
+              if (ev.usage && ev.usage.output_tokens) tout = ev.usage.output_tokens;
+              if (ev.delta && ev.delta.stop_reason === "max_tokens") cut = true;
+            } else if (ev.type === "error") { await send({ error: "Dịch vụ AI báo lỗi giữa chừng." }); }
+          }
+        }
+      }
+      const cost = costOf(T, tin, tout, env);
+      u.used_vnd += cost; u.day_count += 1; u.calls = (u.calls || 0) + 1;
+      pool.spent_vnd += cost;
+      await env.KV.put("user:" + code, JSON.stringify(u));
+      await env.KV.put("pool", JSON.stringify(pool));
+      await send({ done: true, cut: cut, version: VERSION,
+        meta: { tier: tier, label: T.label, reason: reason, tokens_in: tin, tokens_out: tout, cost_vnd: cost }, quota: quotaOf(u, pool) });
+    } catch (e) {
+      try { await send({ error: "Mất kết nối giữa chừng. Thử lại." }); } catch (e2) {}
+    } finally { try { await writer.close(); } catch (e3) {} }
+  })();
+  return new Response(ts.readable, { headers: Object.assign({ "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" }, cors(env)) });
+}
+
+const MAP_SYS = "Bạn ghép tên cột của nhiều file báo cáo Excel tiếng Việt về một bộ cột chuẩn. Đầu vào là JSON: targets (danh sách cột chuẩn chị muốn, có thể rỗng) và headers (mỗi phần tử: name tên cột gốc, files số file có cột đó, sample vài giá trị mẫu). Hiểu viết tắt và đồng nghĩa (vd LCB, Mức lương cơ sở, Lương CB là cùng một cột 'Lương cơ bản'; 'Mã NV', 'Mã nhân viên', 'MSNV' là cùng một cột). Nếu targets không rỗng thì canonical chính là targets (giữ nguyên thứ tự, tên) và chỉ ghép vào các cột đó; cột gốc không có cột chuẩn nào tương ứng thì để null. Nếu targets rỗng thì tự đề xuất canonical (tối đa 40 cột, tên ngắn rõ nghĩa tiếng Việt có dấu, theo thứ tự hợp lý: mã, họ tên, đơn vị, rồi số liệu) và ghép mọi cột gốc có nghĩa vào đó. Không gộp hai cột khác nghĩa (vd 'Lương cơ bản' khác 'Thực lĩnh'; 'Doanh số' khác 'Chỉ tiêu'). CHỈ trả MỘT đối tượng JSON: {\"canonical\":[\"...\"],\"map\":{\"tên cột gốc\":\"tên cột chuẩn hoặc null\"}}, không chữ nào khác.";
+const NARRATE_SYS = "Bạn là chuyên viên phân tích C&B/kế toán. Dựa CHỈ vào số liệu đã tính sẵn trong ngữ cảnh, viết 4 đến 6 câu tiếng Việt giải thích vì sao quỹ thay đổi giữa hai kỳ: nêu các yếu tố đóng góp lớn nhất theo thứ tự, kèm số tiền (đơn vị đồng, dễ đọc) và tỷ lệ phần trăm, nêu nhóm/vùng nổi bật nếu có. KHÔNG bịa nguyên nhân ngoài dữ liệu (như đổi chính sách, lũy tiến) mà chỉ nói nếu số liệu gợi ý, và nêu rõ cần thông tin gì thêm để kết luận. Không dùng bảng, không dùng gạch đầu dòng, không chào hỏi.";
+
+/* ====== XỬ LÝ CHAT ====== */
+async function chat(req, env) {
+  const u = await getUser(env, req.headers.get("X-User-Code"));
+  if (!u || !u.active) return out(env, 401, { error: "Mã truy cập không đúng hoặc đã bị khóa." });
+  u.app_version = req.headers.get("X-App-Version") || u.app_version || "cũ";
+  if (CFG.maintenance) return out(env, 503, { error: CFG.maintenance_msg || "Trợ lý đang bảo trì, vui lòng quay lại sau." });
+  const pool = await getPool(env);
+  if (pool.spent_vnd >= pool.budget_vnd) return out(env, 402, { error: "Quỹ chung đã hết. Liên hệ admin. Các nút kiểm tra lỗi vẫn dùng được." });
+  if (u.used_vnd >= u.limit_vnd) return out(env, 429, { error: "Bạn đã dùng hết hạn mức tháng này." });
+  if (u.day_count >= dayMax(u)) return out(env, 429, { error: "Hôm nay bạn đã dùng tối đa số lượt cho phép." });
+
+  let body;
+  try { body = await req.json(); } catch (e) { return out(env, 400, { error: "Dữ liệu gửi lên không hợp lệ." }); }
+  const task = body.task === "map" || body.task === "narrate" ? body.task : "";
+  const q = String(body.question || "").slice(0, 3000);
+  const ctx = String(body.context || "").slice(0, ctxMax());
+  if (!q) return out(env, 400, { error: "Chưa nhập yêu cầu." });
+
+  /* Tự chọn model: việc nặng dùng Sonnet, còn lại Haiku; Haiku trả sai định dạng thì tự chuyển sang Sonnet */
+  let tier = "sonnet", reason = "việc ghi/sửa cần làm cho đúng và đẹp";
+  if (body.deep) reason = "chị yêu cầu làm kỹ hơn";
+  else if (/^\s*(giải thích|vì sao|tại sao|là gì|hướng dẫn|cách )/i.test(q) && q.length < 200 && ctx.length < 8000) { tier = "haiku"; reason = "câu hỏi giải thích đơn giản"; }
+
+  let system = SYSTEM_BASE + DOMAIN + (COMPAT[body.compat] || COMPAT.legacy) + " Hôm nay là " + new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10) + " (giờ Việt Nam).";
+  if (task === "map") { tier = "haiku"; reason = "ghép tên cột các file"; system = MAP_SYS; }
+  else if (task === "narrate") { tier = "sonnet"; reason = "giải thích chênh lệch quỹ"; system = NARRATE_SYS; }
+  let hist = "";
+  if (Array.isArray(body.history)) {
+    hist = body.history.slice(-3).map(function (h) {
+      return "- Chị: " + String((h && h.q) || "").slice(0, 300) + "\n  Trợ lý đã làm: " + String((h && h.a) || "").slice(0, 500);
+    }).join("\n");
+  }
+  const content = "NGỮ CẢNH BẢNG TÍNH:\n" + ctx +
+    (hist ? "\n\nCÁC LẦN TRƯỚC TRONG PHIÊN NÀY:\n" + hist : "") + "\n\nYÊU CẦU: " + q;
+  if (body.stream === true) {
+    return chatStream(req, env, u, pool, tier, reason, system, content);
+  }
+  let totalCost = 0, tinSum = 0, toutSum = 0, res, T;
+  try {
+    T = Object.assign({}, TIERS[tier], { model: modelOf(env, tier) });
+    res = await callAI(env, T, system, content);
+    if (res.err) return out(env, 502, { error: res.err });
+    totalCost += costOf(T, res.tin, res.tout, env); tinSum += res.tin; toutSum += res.tout;
+    if (tier === "haiku" && !hasJson(res.text) && task !== "narrate") {
+      tier = "sonnet"; reason = "việc đơn giản nhưng model nhanh làm chưa đạt, tự chuyển sang model mạnh hơn";
+      T = Object.assign({}, TIERS[tier], { model: modelOf(env, tier) });
+      res = await callAI(env, T, system, content);
+      if (res.err) return out(env, 502, { error: res.err });
+      totalCost += costOf(T, res.tin, res.tout, env); tinSum += res.tin; toutSum += res.tout;
+    }
+  } catch (e) { return out(env, 502, { error: "Không gọi được dịch vụ AI. Thử lại sau." }); }
+
+  u.used_vnd += totalCost; u.day_count += 1; u.calls = (u.calls || 0) + 1;
+  pool.spent_vnd += totalCost;
+  await env.KV.put("user:" + req.headers.get("X-User-Code"), JSON.stringify(u));
+  await env.KV.put("pool", JSON.stringify(pool));
+
+  return out(env, 200, {
+    reply: res.text, cut: !!res.cut,
+    version: VERSION,
+    meta: { tier: tier, label: T.label, reason: reason, tokens_in: tinSum, tokens_out: toutSum, cost_vnd: totalCost },
+    quota: quotaOf(u, pool)
+  });
+}
+
+/* ====== ADMIN API ====== */
+async function adminApi(req, env, path) {
+  const given = req.headers.get("X-Admin-Password") || "";
+  const stored = await env.KV.get("admin_pw");
+  const okPw = stored ? (await sha("vk|" + given)) === stored : (!!env.ADMIN_PASSWORD && given === env.ADMIN_PASSWORD);
+  if (!okPw) return out(env, 401, { error: "Sai mật khẩu admin." });
+  if (path === "/admin/api/state") {
+    const list = await env.KV.list({ prefix: "user:" });
+    const users = [];
+    for (const k of list.keys) {
+      const u = await env.KV.get(k.name, "json");
+      if (u) {
+        if (u.month !== monthKey()) u.used_vnd = 0;
+        users.push(Object.assign({ code: k.name.slice(5) }, u));
+      }
+    }
+    return out(env, 200, { users: users, pool: await getPool(env), month: monthKey(), version: VERSION, note: VERSION_NOTE,
+      cfg: { daily_max: dayMax(null), default_limit: defLimit(), max_context: ctxMax(), model_fast: CFG.model_fast || env.MODEL_FAST || TIERS.haiku.model,
+        model_smart: CFG.model_smart || env.MODEL_SMART || TIERS.sonnet.model, maintenance: !!CFG.maintenance, maintenance_msg: CFG.maintenance_msg || "" },
+      pw_in_kv: !!stored, today: dayKey() });
+  }
+  let b = {};
+  try { b = await req.json(); } catch (e) {}
+  if (path === "/admin/api/keycheck") {
+    const k = String(env.ANTHROPIC_API_KEY || "");
+    let st = null, txt = "";
+    try {
+      const t = await fetch(apiBase(env) + "/v1/models", { headers: apiHeaders(env, false) });
+      st = t.status;
+      const raw = await t.text();
+      try {
+        const j = JSON.parse(raw);
+        const ids = (j.data || []).map(function (m) { return m.id; });
+        const hs = ids.filter(function (x) { return /sonnet|haiku/i.test(x); });
+        txt = "SONNET/HAIKU: " + (hs.join(", ") || "(khong co)") + " | TAT CA: " + ids.join(", ");
+      } catch (e2) { txt = raw.slice(0, 700); }
+    } catch (e) { st = "loi mang"; }
+    return out(env, 200, {
+      co_khoa: k.length > 0, do_dai: k.length, dau: k.slice(0, 6), cuoi: k.slice(-4),
+      co_khoang_trang: /\s/.test(k), co_dau_nhay: /["']/.test(k),
+      dia_chi: apiBase(env), anthropic_tra_ve: st, noi_dung: txt
+    });
+  }
+  if (path === "/admin/api/user/add") {
+    const code = "u" + newCode();
+    const u = { name: String(b.name || "Chưa đặt tên").slice(0, 60), active: true,
+      limit_vnd: Number(b.limit_vnd) || defLimit(), month: monthKey(), used_vnd: 0,
+      day: dayKey(), day_count: 0, calls: 0 };
+    await env.KV.put("user:" + code, JSON.stringify(u));
+    return out(env, 200, { code: code });
+  }
+  if (path === "/admin/api/user/update") {
+    const u = await env.KV.get("user:" + b.code, "json");
+    if (!u) return out(env, 404, { error: "Không thấy người dùng." });
+    if (typeof b.active === "boolean") u.active = b.active;
+    if (b.limit_vnd) u.limit_vnd = Number(b.limit_vnd);
+    if (b.day_max !== undefined) u.day_max = Number(b.day_max) > 0 ? Math.min(1000, Math.floor(Number(b.day_max))) : 0;
+    if (typeof b.name === "string" && b.name.trim()) u.name = b.name.trim().slice(0, 60);
+    if (b.reset_day) { u.day = dayKey(); u.day_count = 0; }
+    if (b.reset_month) { u.month = monthKey(); u.used_vnd = 0; }
+    await env.KV.put("user:" + b.code, JSON.stringify(u));
+    return out(env, 200, { ok: true });
+  }
+  if (path === "/admin/api/user/delete") {
+    await env.KV.delete("user:" + b.code);
+    return out(env, 200, { ok: true });
+  }
+  if (path === "/admin/api/config") {
+    const c = (await env.KV.get("config", "json")) || {};
+    const num = function (v, lo, hi) { v = Math.floor(Number(v)); return v >= lo && v <= hi ? v : null; };
+    if (b.daily_max !== undefined) { const v = num(b.daily_max, 1, 1000); if (v === null) return out(env, 400, { error: "Số lượt/ngày phải từ 1 đến 1000." }); c.daily_max = v; }
+    if (b.default_limit !== undefined) { const v = num(b.default_limit, 1000, 100000000); if (v === null) return out(env, 400, { error: "Hạn mức mặc định không hợp lệ." }); c.default_limit = v; }
+    if (b.max_context !== undefined) { const v = num(b.max_context, 10000, 200000); if (v === null) return out(env, 400, { error: "Độ dài ngữ cảnh phải từ 10.000 đến 200.000 ký tự." }); c.max_context = v; }
+    if (typeof b.model_fast === "string") c.model_fast = b.model_fast.trim().slice(0, 80);
+    if (typeof b.model_smart === "string") c.model_smart = b.model_smart.trim().slice(0, 80);
+    if (typeof b.maintenance === "boolean") c.maintenance = b.maintenance;
+    if (typeof b.maintenance_msg === "string") c.maintenance_msg = b.maintenance_msg.slice(0, 200);
+    await env.KV.put("config", JSON.stringify(c));
+    return out(env, 200, { ok: true });
+  }
+  if (path === "/admin/api/password") {
+    const np = String(b.new_password || "");
+    if (np.length < 8) return out(env, 400, { error: "Mật khẩu mới cần ít nhất 8 ký tự." });
+    await env.KV.put("admin_pw", await sha("vk|" + np));
+    return out(env, 200, { ok: true });
+  }
+  if (path === "/admin/api/pool") {
+    const p = await getPool(env);
+    if (b.budget_vnd !== undefined) p.budget_vnd = Number(b.budget_vnd);
+    if (b.spent_vnd !== undefined) p.spent_vnd = Number(b.spent_vnd);
+    await env.KV.put("pool", JSON.stringify(p));
+    return out(env, 200, p);
+  }
+  return out(env, 404, { error: "Không có chức năng này." });
+}
+
+/* ====== TRANG ADMIN (HTML) ====== */
+const ADMIN_HTML = `<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Trợ lý Excel</title>
+<style>body{font-family:Segoe UI,Arial,sans-serif;max-width:960px;margin:20px auto;padding:0 12px}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px}
+.off{opacity:.45}button{margin:2px;cursor:pointer}input{padding:4px}.box{background:#f3f6fa;padding:10px;border-radius:6px;margin:10px 0}</style></head>
+<body><h2>Quản lý Trợ lý Excel</h2><div class="box"><b>Phiên bản máy chủ (worker): ${VERSION}</b> <span id="note"></span></div><div class="box" id="pool"></div>
+<button onclick="keyCheck()">Kiểm tra khóa AI</button> <button onclick="chPw()">Đổi mật khẩu admin</button>
+<h3>Cài đặt chung</h3><div class="box" id="cfg"></div>
+<h3>Thêm người dùng</h3>
+<input id="nm" placeholder="Tên (vd: Chị Lan)"> <input id="lm" type="number" value="80000"> đ/tháng <button onclick="addUser()">Thêm</button>
+<h3>Người dùng</h3><table id="tb"></table>
+<script>
+var PW = sessionStorage.getItem("pw") || prompt("Mật khẩu admin:");
+function call(path, body) {
+  return fetch(path, { method: body ? "POST" : "GET",
+    headers: { "Content-Type": "application/json", "X-Admin-Password": PW },
+    body: body ? JSON.stringify(body) : undefined })
+  .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || r.status); return d; }); });
+}
+function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function fmt(n) { return Number(n).toLocaleString("vi-VN"); }
+function load() {
+  call("/admin/api/state").then(function (s) {
+    sessionStorage.setItem("pw", PW);
+    document.getElementById("note").textContent = "· " + s.note;
+    var p = s.pool, left = Math.max(0, p.budget_vnd - p.spent_vnd);
+    document.getElementById("pool").innerHTML =
+      "<b>Quỹ chung:</b> đã tiêu " + fmt(p.spent_vnd) + " / " + fmt(p.budget_vnd) + " đ (còn " + fmt(left) + " đ) " +
+      "<button onclick='setPool()'>Sửa tổng quỹ</button><button onclick='resetSpent()'>Đặt lại đã tiêu</button>";
+    var h = "<tr><th>Tên</th><th>Mã truy cập</th><th>Tháng " + s.month + "</th><th>Lượt hôm nay</th><th>Tổng lượt</th><th>Bản add-in</th><th>Thao tác</th></tr>";
+    s.users.forEach(function (u) {
+      h += "<tr class='" + (u.active ? "" : "off") + "'><td>" + esc(u.name) + "</td><td><code>" + esc(u.code) + "</code></td><td>" +
+        fmt(u.used_vnd) + " / " + fmt(u.limit_vnd) + " đ</td><td>" + ((u.day === s.today ? u.day_count : 0) || 0) + " / " + (u.day_max || s.cfg.daily_max) + (u.day_max ? " *" : "") + "</td><td>" + (u.calls || 0) + "</td><td>" + esc(u.app_version || "chưa dùng") + (u.app_version && u.app_version !== s.version ? " ⚠ lệch" : "") + "</td><td>" +
+        "<button onclick=\\"toggle('" + u.code + "'," + (!u.active) + ")\\">" + (u.active ? "Khóa" : "Mở") + "</button>" +
+        "<button onclick=\\"setLimit('" + u.code + "')\\">Hạn mức tháng</button>" +
+        "<button onclick=\\"setDay('" + u.code + "')\\">Lượt/ngày</button>" +
+        "<button onclick=\\"rename('" + u.code + "')\\">Đổi tên</button>" +
+        "<button onclick=\\"resetU('" + u.code + "')\\">Đặt lại số đã dùng</button>" +
+        "<button onclick=\\"del('" + u.code + "')\\">Xóa</button></td></tr>";
+    });
+    document.getElementById("tb").innerHTML = h;
+    var c = s.cfg;
+    document.getElementById("cfg").innerHTML =
+      "<table><tr><td>Số lượt tối đa / người / ngày</td><td><input id='c_dm' type='number' value='" + c.daily_max + "'> (dấu * ở bảng là người có mức riêng)</td></tr>" +
+      "<tr><td>Hạn mức tháng mặc định cho người mới (đ)</td><td><input id='c_dl' type='number' value='" + c.default_limit + "'></td></tr>" +
+      "<tr><td>Model nhanh (đọc, hỏi đáp)</td><td><input id='c_mf' size='34' value='" + esc(c.model_fast) + "'></td></tr>" +
+      "<tr><td>Model mạnh (sửa, phân tích)</td><td><input id='c_ms' size='34' value='" + esc(c.model_smart) + "'></td></tr>" +
+      "<tr><td>Dữ liệu tối đa gửi AI mỗi lần (ký tự)</td><td><input id='c_cx' type='number' value='" + c.max_context + "'></td></tr>" +
+      "<tr><td>Tạm dừng (bảo trì)</td><td><label><input id='c_mt' type='checkbox'" + (c.maintenance ? " checked" : "") + "> Đang tạm dừng</label> " +
+      "<input id='c_mm' size='40' placeholder='Thông báo hiện cho người dùng' value='" + esc(c.maintenance_msg) + "'></td></tr></table>" +
+      "<button onclick='saveCfg()'>Lưu cài đặt</button> " + (s.pw_in_kv ? "" : "<i>Mật khẩu đang lấy từ biến ADMIN_PASSWORD; bấm Đổi mật khẩu để tự quản ở đây.</i>");
+  }).catch(function (e) { sessionStorage.removeItem("pw"); alert(e.message); });
+}
+function addUser() {
+  call("/admin/api/user/add", { name: document.getElementById("nm").value, limit_vnd: document.getElementById("lm").value })
+    .then(function (d) { alert("Mã truy cập (gửi riêng cho người dùng): " + d.code); document.getElementById("nm").value = ""; load(); })
+    .catch(function (e) { alert(e.message); });
+}
+function saveCfg() {
+  var g = function (i) { return document.getElementById(i); };
+  call("/admin/api/config", { daily_max: g("c_dm").value, default_limit: g("c_dl").value, model_fast: g("c_mf").value, model_smart: g("c_ms").value,
+    max_context: g("c_cx").value, maintenance: g("c_mt").checked, maintenance_msg: g("c_mm").value })
+    .then(function () { alert("Đã lưu."); load(); }).catch(function (e) { alert(e.message); });
+}
+function chPw() {
+  var a = prompt("Mật khẩu mới (ít nhất 8 ký tự):"); if (!a) return;
+  var b = prompt("Nhập lại mật khẩu mới:"); if (a !== b) { alert("Hai lần nhập không giống nhau."); return; }
+  call("/admin/api/password", { new_password: a }).then(function () { PW = a; sessionStorage.setItem("pw", a); alert("Đã đổi mật khẩu. Nhớ lưu lại ở nơi an toàn."); load(); }).catch(function (e) { alert(e.message); });
+}
+function setDay(c) { var v = prompt("Số lượt/ngày riêng cho người này (nhập 0 để dùng mức chung):"); if (v !== null && v !== "") call("/admin/api/user/update", { code: c, day_max: v }).then(load).catch(function (e) { alert(e.message); }); }
+function rename(c) { var v = prompt("Tên mới:"); if (v) call("/admin/api/user/update", { code: c, name: v }).then(load); }
+function resetU(c) { if (confirm("Đặt lại lượt hôm nay và số tiền đã dùng tháng này về 0?")) call("/admin/api/user/update", { code: c, reset_day: true, reset_month: true }).then(load); }
+function toggle(c, a) { call("/admin/api/user/update", { code: c, active: a }).then(load); }
+function setLimit(c) { var v = prompt("Hạn mức tháng mới (đ):"); if (v) call("/admin/api/user/update", { code: c, limit_vnd: v }).then(load); }
+function del(c) { if (confirm("Xóa người dùng này?")) call("/admin/api/user/delete", { code: c }).then(load); }
+function setPool() { var v = prompt("Tổng quỹ mới (đ):"); if (v) call("/admin/api/pool", { budget_vnd: v }).then(load); }
+function resetSpent() { if (confirm("Đặt số đã tiêu về 0 (khi vừa nạp quỹ mới)?")) call("/admin/api/pool", { spent_vnd: 0 }).then(load); }
+function keyCheck() {
+  call("/admin/api/keycheck", {}).then(function (d) {
+    alert("Dia chi: " + d.dia_chi + "\\nCo khoa: " + d.co_khoa + "\\nDo dai: " + d.do_dai + "\\nDau: " + d.dau + "  Cuoi: " + d.cuoi + "\\nKhoang trang: " + d.co_khoang_trang + "  Dau nhay: " + d.co_dau_nhay + "\\nMa tra ve: " + d.anthropic_tra_ve + "\\nNoi dung: " + d.noi_dung);
+  }).catch(function (e) { alert(e.message); });
+}
+load();
+</script></body></html>`;
+
+/* ====== ĐIỂM VÀO ====== */
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url);
+    const path = url.pathname;
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(env) });
+    if (path !== "/version") await loadCfg(env);
+    if (path === "/version") return out(env, 200, { version: VERSION, note: VERSION_NOTE });
+    if (path === "/admin") return new Response(ADMIN_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    if (path.indexOf("/admin/api/") === 0) return adminApi(req, env, path);
+    if (path === "/api/me" && req.method === "GET") {
+      const u = await getUser(env, req.headers.get("X-User-Code"));
+      if (!u || !u.active) return out(env, 401, { error: "Mã truy cập không đúng hoặc đã bị khóa." });
+      const av = req.headers.get("X-App-Version") || "cũ";
+      if (u.app_version !== av) { u.app_version = av; await env.KV.put("user:" + req.headers.get("X-User-Code"), JSON.stringify(u)); }
+      return out(env, 200, { name: u.name, version: VERSION, quota: quotaOf(u, await getPool(env)) });
+    }
+    if (path === "/api/chat" && req.method === "POST") return chat(req, env);
+    return out(env, 404, { error: "Không tìm thấy." });
+  }
+};
