@@ -1,5 +1,5 @@
 var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* đã điền sẵn */
-var APP_VERSION = "1.11.2"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
+var APP_VERSION = "1.11.3"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
 var SERVER_VERSION = "";
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
@@ -522,7 +522,10 @@ function doAction(ctx, a, base, undo) {
             undo.push({ t: "widths", sheet: a.sheet || base, addr: localAddr(rng.address), w: ws });
             if (a.width === "auto" || !a.width) rng.format.autofitColumns();
             else rng.format.columnWidth = Math.max(20, Math.min(400, Number(a.width) * 5.7));
-            return ctx.sync().then(function () { return describe(a); });
+            return ctx.sync().then(function () { return describe(a); }, function (e) {
+              if (a.width === "auto" || !a.width) { rng.format.columnWidth = 90; return ctx.sync().then(function () { return describe(a) + " (đặt độ rộng 90 vì Excel không tự vừa được)"; }); }
+              throw e;
+            });
           });
         });
       });
@@ -1346,7 +1349,7 @@ function smartFormat(done, opts) {
         info.r0 = rg.rowIndex; info.nf = rg.numberFormat; info.widths = [];
         for (i = 0; i < cs.length; i++) info.widths.push(cs[i].format.columnWidth);
         info.rowHeight = rg.format.rowHeight; info.statN = statN;
-        info.plan = planFormat(stat.values, stat.numberFormat, rg.rowCount > statN);
+        info.plan = planFormat(stat.values, stat.numberFormat, rg.rowCount > statN); info.vals = stat.values;
       });
     });
   }).then(step2, fail);
@@ -1388,14 +1391,23 @@ function smartFormat(done, opts) {
         tr.format.font.bold = true; tr.format.fill.color = "#EAF1F8";
         var tb = tr.format.borders.getItem("EdgeTop"); tb.style = "Continuous"; tb.color = "#1F4E78";
       }
-      tbl.format.autofitColumns();
       return ctx.sync().then(function () {
+        /* autofit đôi khi báo "current selection is invalid" (đang chọn biểu đồ/đang sửa ô): khi đó tự ước lượng độ rộng */
+        tbl.format.autofitColumns();
+        return ctx.sync().then(function () { return true; }, function () { return false; });
+      }).then(function (autoOK) {
         var cs = [];
-        for (c = 0; c < cols; c++) { var cc = rg.getColumn(c); cc.format.load("columnWidth"); cs.push(cc); }
+        if (autoOK) for (c = 0; c < cols; c++) { var cc = rg.getColumn(c); cc.format.load("columnWidth"); cs.push(cc); }
         return ctx.sync().then(function () {
           var wrapAny = false;
           for (c = 0; c < cols; c++) {
-            var w = cs[c].format.columnWidth, col2 = P.cols[c];
+            var w, col2 = P.cols[c];
+            if (autoOK) w = cs[c].format.columnWidth;
+            else {
+              var ml = 4, rr;
+              for (rr = 0; rr < (info.vals || []).length; rr++) { var tx = info.vals[rr][c]; var L = tx === null || tx === undefined ? 0 : String(tx).length; if (L > ml) ml = L; }
+              w = Math.min(ml, 40) * 6.4 + 8;
+            }
             var maxW = col2.type === "text" ? 260 : 170;
             var nw = Math.max(52, Math.min(maxW, w + 14));
             if (w + 14 > maxW && col2.type === "text" && dn > 0) { tbl.getCell(1, c).getResizedRange(dn - 1, 0).format.wrapText = true; wrapAny = true; }
@@ -1404,7 +1416,7 @@ function smartFormat(done, opts) {
           }
           hdr.format.rowHeight = 30; hdr.format.wrapText = true;
           if (wrapAny && dn > 0) tbl.getCell(1, 0).getResizedRange(dn - 1, cols - 1).format.autofitRows();
-          return ctx.sync();
+          return ctx.sync().catch(function () { return null; });
         });
       });
     }).then(function () {
