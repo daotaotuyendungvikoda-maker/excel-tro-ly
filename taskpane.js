@@ -1,5 +1,5 @@
 var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* đã điền sẵn */
-var APP_VERSION = "1.11.1"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
+var APP_VERSION = "1.11.2"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
 var SERVER_VERSION = "";
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
@@ -715,6 +715,9 @@ Runner.prototype.pump = function () {
   }
   self.running = true;
   var a = self.q.shift();
+  /* sau add_sheet, thao tác ghi không nói rõ sheet thì hiểu là ghi vào sheet mới, tránh đè lên sheet dữ liệu */
+  if (a.op === "add_sheet") self.newSheet = String(a.name || "").replace(/[:\\\/?*\[\]]/g, "").substring(0, 31);
+  else if (self.newSheet && !a.sheet && /^(set_values|set_formula|format|col_width|freeze|gridlines|smart_format|chart)$/.test(a.op)) a.sheet = self.newSheet;
   var line = document.createElement("div"); line.className = "step"; line.textContent = "⏳ " + describe(a);
   self.bot.body.appendChild(line);
   self.doneN = (self.doneN || 0) + 1;
@@ -3046,6 +3049,10 @@ function undo() {
   var i = batch.length - 1, bad = 0;
   function next() {
     if (i < 0) {
+      /* báo cho AI biết lần trước đã bị hủy, tránh nó tưởng vẫn còn */
+      if (state.hist.length) { var lh = state.hist[state.hist.length - 1]; if (!/^\[ĐÃ HOÀN TÁC\]/.test(lh.a)) lh.a = "[ĐÃ HOÀN TÁC - không còn trong file] " + lh.a; }
+      state.hist.push({ q: "(chị bấm Hoàn tác)", a: "Mọi thay đổi của lần làm liền trước, kể cả sheet đã tạo, đã bị XÓA khỏi file. Những gì đã nói là đã tạo thì hiện KHÔNG còn. Chỉ tin NGỮ CẢNH hiện tại; nếu chị yêu cầu lại thì phải làm lại từ đầu (add_sheet rồi ghi vào sheet mới)." });
+      if (state.hist.length > 4) state.hist.shift();
       addMsg("bot", bad ? "Đã hoàn tác, nhưng có " + bad + " chỗ không lùi lại được (kiểm tra lại sheet)." : "Đã hoàn tác lần thay đổi gần nhất.");
       $("undoBtn").disabled = state.undo.length === 0;
       return;
