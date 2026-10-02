@@ -1,5 +1,5 @@
 var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* đã điền sẵn */
-var APP_VERSION = "1.11.3"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
+var APP_VERSION = "1.11.4"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
 var SERVER_VERSION = "";
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
@@ -343,9 +343,10 @@ function doAction(ctx, a, base, undo) {
   if (op === "add_sheet") {
     var nm = String(a.name || "").replace(/[:\\\/?*\[\]]/g, "").substring(0, 31);
     if (!nm) throw new Error("tên sheet không hợp lệ");
-    var ex = ctx.workbook.worksheets.getItemOrNullObject(nm); ex.load("isNullObject");
+    var wsAll = ctx.workbook.worksheets; wsAll.load("items/name");
     return ctx.sync().then(function () {
-      if (!ex.isNullObject) return "Sheet " + nm + " đã có, dùng lại";
+      var exists = false, q; for (q = 0; q < wsAll.items.length; q++) if (wsAll.items[q].name.toLowerCase() === nm.toLowerCase()) exists = true;
+      if (exists) return "Sheet " + nm + " đã có, dùng lại";
       ctx.workbook.worksheets.add(nm);
       return ctx.sync().then(function () { undo.push({ t: "addsheet", name: nm }); return "Đã thêm sheet " + nm; });
     });
@@ -1066,9 +1067,9 @@ function readRanges(reads, cb) {
 function evalCalcs(calcs, cb) {
   var list = (calcs || []).slice(0, 12), nm = "_tinh_tam";
   Excel.run(function (ctx) {
-    var old = ctx.workbook.worksheets.getItemOrNullObject(nm); old.load("isNullObject");
+    var allS = ctx.workbook.worksheets; allS.load("items/name");
     return ctx.sync().then(function () {
-      if (!old.isNullObject) old.delete();
+      var q; for (q = 0; q < allS.items.length; q++) if (allS.items[q].name === nm) allS.items[q].delete();
       var ws = ctx.workbook.worksheets.add(nm), cells = [];
       list.forEach(function (c, i) {
         var f = String(c.formula || "");
@@ -3130,7 +3131,26 @@ function scan() {
 }
 
 /* ---------- Khởi động ---------- */
+/* Excel 2016 cũ (ExcelApi dưới 1.4) không có các hàm ...OrNullObject: bù bằng hàm cũ tương đương */
+function installCompatShim() {
+  try {
+    if (typeof Excel === "undefined" || supports("1.4")) return;
+    var wrap = function (o) {
+      var orig = o.load; o.isNullObject = false;
+      o.load = function (p) {
+        if (typeof p === "string") p = p.split(",").map(function (x) { return x.replace(/\s/g, ""); }).filter(function (x) { return x && x !== "isNullObject"; }).join(",");
+        return p ? orig.call(o, p) : o;
+      };
+      return o;
+    };
+    if (Excel.Worksheet && !Excel.Worksheet.prototype.getUsedRangeOrNullObject) Excel.Worksheet.prototype.getUsedRangeOrNullObject = function () { return wrap(this.getUsedRange(true)); };
+    if (Excel.Range && !Excel.Range.prototype.getIntersectionOrNullObject) Excel.Range.prototype.getIntersectionOrNullObject = function (r) { return wrap(this.getIntersection(r)); };
+    if (Excel.WorksheetCollection && !Excel.WorksheetCollection.prototype.getItemOrNullObject) Excel.WorksheetCollection.prototype.getItemOrNullObject = function (n) { return wrap(this.getItem(n)); };
+  } catch (e) {}
+}
+
 Office.onReady(function () {
+  installCompatShim();
   state.code = store("code") || "";
   var au = store("auto");
   $("auto").checked = au !== "0";
