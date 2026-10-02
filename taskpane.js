@@ -1,5 +1,5 @@
 var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* đã điền sẵn */
-var APP_VERSION = "1.11.4"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
+var APP_VERSION = "1.11.5"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
 var SERVER_VERSION = "";
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
@@ -105,8 +105,10 @@ function getContext(cb) {
     var sel = wb.getSelectedRange(); sel.load("address,rowCount,columnCount,columnIndex,rowIndex");
     var sh = wb.worksheets.getActiveWorksheet(); sh.load("name");
     var sheets = wb.worksheets; sheets.load("items/name");
-    var used = sh.getUsedRangeOrNullObject(); used.load("address,rowCount,columnCount,rowIndex,columnIndex");
     return ctx.sync().then(function () {
+      var used0 = sh.getUsedRangeOrNullObject(); used0.load("address,rowCount,columnCount,rowIndex,columnIndex");
+      return ctx.sync().then(function () { return used0; }, function (e) { if (!LEGACY) throw e; return { isNullObject: true }; });
+    }).then(function (used) {
       var head = "Sheet đang mở: " + sh.name + "\nÔ đang chọn: " + sel.address + "\nCác sheet trong file: ";
       var names = [], i;
       for (i = 0; i < sheets.items.length; i++) if (sheets.items[i].name.indexOf("~Lưu") !== 0) names.push(sheets.items[i].name);
@@ -117,7 +119,7 @@ function getContext(cb) {
       var rg = used.getCell(0, 0).getResizedRange(statRows - 1, cols - 1);
       rg.load("values,formulas,numberFormat");
       var others = [];
-      for (i = 0; i < sheets.items.length && others.length < 6; i++) {
+      for (i = 0; i < sheets.items.length && others.length < 6 && !LEGACY; i++) {
         if (sheets.items[i].name !== sh.name) {
           var u2 = sheets.items[i].getUsedRangeOrNullObject(); u2.load("address,columnIndex,rowIndex");
           others.push({ name: sheets.items[i].name, used: u2 });
@@ -3132,9 +3134,15 @@ function scan() {
 
 /* ---------- Khởi động ---------- */
 /* Excel 2016 cũ (ExcelApi dưới 1.4) không có các hàm ...OrNullObject: bù bằng hàm cũ tương đương */
+var LEGACY = false;
 function installCompatShim() {
   try {
-    if (typeof Excel === "undefined" || supports("1.4")) return;
+    if (typeof Excel === "undefined") return;
+    /* Excel 2016 rất cũ (ExcelApi 1.1-1.2) không có getResizedRange: ghép từ getOffsetRange + getBoundingRect (chỉ dùng cho ô đơn) */
+    if (Excel.Range && typeof Excel.Range.prototype.getResizedRange !== "function")
+      Excel.Range.prototype.getResizedRange = function (dr, dc) { return this.getBoundingRect(this.getOffsetRange(dr, dc)); };
+    if (supports("1.4")) return;
+    LEGACY = true;
     var wrap = function (o) {
       var orig = o.load; o.isNullObject = false;
       o.load = function (p) {
