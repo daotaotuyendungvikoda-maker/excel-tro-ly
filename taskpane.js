@@ -1,5 +1,5 @@
 var WORKER = "https://excel-tro-ly.daotaotuyendungvikoda.workers.dev"; /* đã điền sẵn */
-var APP_VERSION = "1.11.0"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
+var APP_VERSION = "1.11.1"; /* phải khớp VERSION trong worker.js; tăng mỗi lần sửa */
 var SERVER_VERSION = "";
 var DANGER_HEADER = /(lương|luong|salary|cccd|cmnd|stk|tài khoản|tai khoan|mst|mã số thuế|thưởng|thuong)/i;
 var ERR_RE = /^#(REF!|N\/A|DIV\/0!|VALUE!|NAME\?|NUM!|NULL!)/;
@@ -671,10 +671,17 @@ function backupSheet(base, cb) {
   var nm = "~Lưu " + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
   if (!supports("1.7")) { cb(null); return; }
   Excel.run(function (ctx) {
-    var ws = ctx.workbook.worksheets.getItem(base), cp = ws.copy("End");
-    cp.name = nm; cp.visibility = "Hidden";
-    var all = ctx.workbook.worksheets; all.load("items/name");
+    var act = ctx.workbook.worksheets.getActiveWorksheet(); act.load("name");
+    var all = ctx.workbook.worksheets, cp;
     return ctx.sync().then(function () {
+      cp = all.getItem(base).copy("End"); cp.name = nm; cp.visibility = "Hidden";
+      all.load("items/name");
+      return ctx.sync();
+    }).then(function () {
+      /* giữ nguyên sheet đang xem: sao chép sheet có thể làm Excel nhảy sang sheet khác */
+      try { all.getItem(act.name).activate(); } catch (e0) {}
+      return ctx.sync();
+    }).then(function () {
       var bk = [], i;
       for (i = 0; i < all.items.length; i++) if (all.items[i].name.indexOf("~Lưu ") === 0) bk.push(all.items[i]);
       bk.sort(function (x, y) { return x.name < y.name ? -1 : 1; });
